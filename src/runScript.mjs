@@ -142,7 +142,7 @@ async function runScript(pdi, msg = 'update pks') {
         throw new Error(`非預期指令: ${v}`)
     })
 
-    console.log('runScript finish')
+    // console.log('runScript finish')
 }
 
 

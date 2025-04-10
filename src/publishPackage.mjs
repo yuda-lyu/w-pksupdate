@@ -46,7 +46,7 @@ async function publishPackage(names) {
             await runScript(pdi, `update pks`)
 
             publish = true
-            console.log(`publish: ${name}`)
+            console.log(`>>> publish: ${name}`)
 
             break //更新套件須跳出, 因為更新依賴資訊清單須重算
         }
