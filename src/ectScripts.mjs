@@ -1,4 +1,3 @@
-import fs from 'fs'
 import _ from 'lodash-es'
 import w from 'wsemi'
 

@@ -1,6 +1,4 @@
-import fs from 'fs'
 import _ from 'lodash-es'
-import w from 'wsemi'
 import getFolders from './getFolders.mjs'
 import parseProject from './parseProject.mjs'
 import getUpdate from './getUpdate.mjs'
@@ -41,12 +39,15 @@ async function publishPackage(names) {
 
             //執行[npm i]
             await ectScripts(pdi, `npm i`)
+            console.log('')
 
             //執行[script]
             await runScript(pdi, `update pks`)
+            console.log('')
 
             publish = true
             console.log(`>>> publish: ${name}`)
+            console.log('')
 
             break //更新套件須跳出, 因為更新依賴資訊清單須重算
         }

@@ -1,6 +1,3 @@
-import fs from 'fs'
-import _ from 'lodash-es'
-import w from 'wsemi'
 import publishPackage from './publishPackage.mjs'
 
 
