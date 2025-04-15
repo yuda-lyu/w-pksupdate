@@ -49,7 +49,7 @@ async function runScript(pdi, msg = 'update pks') {
 
         let useNode = w.strleft(v, 5) === 'node '
         if (useNode) {
-            console.log('>>> exec: ', v)
+            console.log(`${pdi.name} >>> exec: `, v)
             await ectScripts(pdi, v)
                 .catch((err) => {
                     // console.log('useNode', err)
@@ -75,7 +75,7 @@ async function runScript(pdi, msg = 'update pks') {
 
         let useBin = w.strleft(v, 20) === './node_modules/.bin/'
         if (useBin) {
-            console.log('>>> exec: ', v)
+            console.log(`${pdi.name} >>> exec: `, v)
             await ectScripts(pdi, v)
                 .catch((err) => {
                     // console.log('useBin', err)
@@ -94,7 +94,7 @@ async function runScript(pdi, msg = 'update pks') {
 
         let useGit = w.strleft(v, 4) === 'git '
         if (useGit) {
-            console.log('>>> exec: ', v)
+            console.log(`${pdi.name} >>> exec: `, v)
             await ectScripts(pdi, v)
                 .catch((err) => {
                     // console.log('useGit', err)
@@ -129,7 +129,7 @@ async function runScript(pdi, msg = 'update pks') {
 
         let useNpm = w.strleft(v, 4) === 'npm '
         if (useNpm) {
-            console.log('>>> exec: ', v)
+            console.log(`${pdi.name} >>> exec: `, v)
             await ectScripts(pdi, v)
                 .catch((err) => {
                     // console.log('useNpm', err)
