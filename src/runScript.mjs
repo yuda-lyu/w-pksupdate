@@ -24,7 +24,7 @@ async function runScript(pdi, msg = 'update pks') {
 
     await w.pmSeries(scps, async (v) => {
 
-        let t1 = '#node --experimental-modules toolg/addVersion.mjs'
+        let t1 = '#node toolg/addVersion.mjs'
         let t2 = `git commit -m 'modify: '`
         let t3 = '#npm publish'
 
@@ -57,6 +57,13 @@ async function runScript(pdi, msg = 'update pks') {
                     let e1 = `Browserslist: caniuse-lite is outdated.`
                     if (err.indexOf(e1) >= 0) {
                         //rollup編譯提示caniuse-lite報錯, 不視為錯誤
+                        console.log(err) //err為正常訊息
+                        return
+                    }
+
+                    let e2 = `Creating a browser bundle that depends on Node.js built-in modules`
+                    if (err.indexOf(e2) >= 0) {
+                        //rollup編譯提示前端套件會依賴Node.js內建模組報錯, 不視為錯誤
                         console.log(err) //err為正常訊息
                         return
                     }
@@ -132,6 +139,12 @@ async function runScript(pdi, msg = 'update pks') {
                         //npm publish會用stdout報錯, 不視為錯誤
                         console.log(err) //err為正常訊息
                         return
+                    }
+
+                    let e2 = `You cannot publish over the previously published versions`
+                    if (err.indexOf(e2) >= 0) {
+                        //npm publish先前版本報錯, 要視為錯誤
+                        throw new Error(err)
                     }
 
                     throw new Error(err)

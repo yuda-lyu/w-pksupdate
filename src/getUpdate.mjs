@@ -5,6 +5,19 @@ import JSON5 from 'json5'
 
 
 function getUpdate(ps, nameTar) {
+    // ps = [
+    //   {
+    //     name: 'w-package-tools',
+    //     path: 'D:\\- 006 -        開源\\開源-JS-001-1-w-package-tools/w-package-tools',
+    //     level: '1'
+    //   },
+    //   {
+    //     name: 'wsemi',
+    //     path: 'D:\\- 006 -        開源\\開源-JS-002-3-wsemi/wsemi',
+    //     level: '3'
+    //   },
+    //   ...
+    // ]
 
     let pis = _.map(ps, (p) => {
 
@@ -37,10 +50,20 @@ function getUpdate(ps, nameTar) {
     })
     // console.log('pis', pis)
 
-    let kpName = {}
+    let kp = {}
     _.each(pis, (pi) => {
-        kpName[pi.name] = pi.version
+        kp[pi.name] = pi
     })
+
+    let getVersionByName = (name) => {
+        let version = _.get(kp, `${name}.version`, '')
+        return version
+    }
+
+    let getLevelByName = (name) => {
+        let level = _.get(kp, `${name}.level`, '')
+        return level
+    }
 
     let piTar = null
     _.each(pis, (pi) => {
@@ -69,12 +92,14 @@ function getUpdate(ps, nameTar) {
     _.each(dks, (dk) => {
 
         _.each(piTar[dk], (verOld, name) => {
+            //nameTar為當前套件名, name為當前依賴套件名
 
-            if (!w.haskey(kpName, name)) {
+            let verNew = getVersionByName(name)
+
+            if (!w.isestr(verNew)) {
                 return true //跳出換下一個
             }
 
-            let verNew = kpName[name]
             verNew = `^${verNew}`
             // console.log('verNew', verNew)
 
@@ -88,10 +113,28 @@ function getUpdate(ps, nameTar) {
                 })
             }
 
+            let levelMain = getLevelByName(nameTar)
+            if (!w.isnum(levelMain)) {
+                console.log('nameTar', nameTar)
+                throw new Error(`套件[${nameTar}]無法查到依賴層級level`)
+            }
+            levelMain = w.cint(levelMain)
+
+            let levelDep = getLevelByName(name)
+            if (!w.isnum(levelDep)) {
+                console.log('name', name)
+                throw new Error(`套件[${name}]無法查到依賴層級level`)
+            }
+            levelDep = w.cint(levelDep)
+
+            if (levelMain < levelDep) {
+                throw new Error(`套件[${nameTar}]依賴層級level[${levelMain}] < 套件[${name}]依賴層級level[${levelDep}]`)
+            }
+
         })
 
     })
-    // console.log('pdi, pdi)
+    // console.log('pdi', pdi)
 
     return pdi
 }

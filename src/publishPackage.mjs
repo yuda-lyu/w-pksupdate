@@ -18,11 +18,15 @@ async function publishPackage(names) {
     // ]
 
     let fds = getFolders()
+    // console.log('fds', fds)
+
     let ps = parseProject(fds)
+    // console.log('ps', ps)
 
     if (_.size(names) === 0) {
         names = _.map(ps, 'name')
     }
+    // console.log('names', names)
 
     let publish = false
     for (let k = 0; k < _.size(names); k++) {

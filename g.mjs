@@ -5,6 +5,9 @@ import publishPackages from './src/publishPackages.mjs'
 
 // let names = []
 let names = [
+    'w-data-csv',
+    'w-dwdata-binance',
+    'w-data-syncer',
     'w-converhp',
     'w-serv-broadcast',
     'w-serv-orm',
@@ -15,11 +18,11 @@ let names = [
 
 await publishPackages(names)
     .then(() => {
-        console.log(`finish all`)
+        console.log(`>>> finish all`)
     })
     .catch((err) => {
         console.log(err)
     })
 
 
-//node --experimental-modules g.mjs
+//node g.mjs
