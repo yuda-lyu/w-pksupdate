@@ -50,7 +50,7 @@ async function publishPackage(names) {
             console.log('')
 
             publish = true
-            console.log(`${pdi.name} >>> publish: ${name}`)
+            console.log(`${pdi.name} >>> publish`)
             console.log('')
 
             break //更新套件須跳出, 因為更新依賴資訊清單須重算
