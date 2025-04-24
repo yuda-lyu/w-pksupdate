@@ -39,18 +39,21 @@ async function publishPackage(names) {
             console.log('pdi', pdi)
 
             //執行[update package.json]
+            console.log(`${pdi.name} >>> update package.json...`)
             updatePackage(pdi)
 
             //執行[npm i]
+            console.log(`${pdi.name} >>> npm i...`)
             await ectScripts(pdi, `npm i`)
             console.log('')
 
             //執行[script]
+            console.log(`${pdi.name} >>> update pks...`)
             await runScript(pdi, `update pks`)
             console.log('')
 
             publish = true
-            console.log(`${pdi.name} >>> publish`)
+            console.log(`${pdi.name} >>> finish`)
             console.log('')
 
             break //更新套件須跳出, 因為更新依賴資訊清單須重算

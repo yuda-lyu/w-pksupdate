@@ -154,6 +154,9 @@ async function runScript(pdi, msg = 'update pks') {
 
         throw new Error(`非預期指令: ${v}`)
     })
+        .catch((err) => {
+            console.log('runScript catch', err)
+        })
 
     // console.log('runScript finish')
 }

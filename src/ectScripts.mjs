@@ -1,5 +1,6 @@
 import _ from 'lodash-es'
 import w from 'wsemi'
+// import execScript from 'wsemi/src/execScript.mjs'
 
 
 async function ectScripts(pdi, scps) {
@@ -47,6 +48,7 @@ async function ectScripts(pdi, scps) {
     ]
     args = _.join(args, ' ; ')
     c = await w.execScript(prog, args)
+    // c = await execScript(prog, args)
     console.log(c)
 
 }
