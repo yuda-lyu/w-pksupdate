@@ -10,6 +10,15 @@ let names = [
     // 但有些是devDependencies依賴前者套件, 至少須給與相同level, 若dependencies依賴前者套件就一定要給予大於level
     // 因devDependencies有出現新版依然會更新與發布, 即便非必要, 所以names盡量給予level由小至大的順序, 減少自動化時非必要之更新發布
 
+    'w-zip', //有些套件需要解壓縮(例如w-dwload-dlp), 目前尚未有偵測level優化更新順序, 故先放前面
+
+    'w-data-mseed',
+    'w-dwload-m3u8',
+    'w-dwload-dlp',
+    'w-ldap',
+    'w-kriging',
+    'w-opencc',
+
     'w-data-csv',
     'w-dwdata-binance',
     'w-data-syncer',
