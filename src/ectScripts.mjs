@@ -1,6 +1,5 @@
 import _ from 'lodash-es'
 import w from 'wsemi'
-// import execScript from 'wsemi/src/execScript.mjs'
 
 
 async function ectScripts(pdi, scps) {
@@ -21,34 +20,14 @@ async function ectScripts(pdi, scps) {
     let args = []
     let c = ''
 
-    // args = ['ls']
-    // c = await w.execScript(prog, args)
-    // console.log(c)
-
-    // args = ['pwd']
-    // c = await w.execScript(prog, args)
-    // console.log(c)
-
-    // args = [`cd "${pdi.path}"`]
-    // c = await w.execScript(prog, args)
-    // console.log(c)
-
-    // args = ['npm i']
-    // let c = await w.execScript(prog, args)
-    // console.log(c)
-
-    // args = [`cd "${pdi.path}" ; pwd ; npm i`]
-    // let c = await w.execScript(prog, args)
-    // console.log(c)
-
     args = [
         `cd "${pdi.path}"`,
         // `pwd`, //顯示當前工作路徑會延遲顯示, 故會出現於最末
         ...scps,
     ]
-    args = _.join(args, ' ; ')
-    c = await w.execScript(prog, args)
-    // c = await execScript(prog, args)
+    args = _.join(args, ' ; ') //合併為整行指令
+    // console.log('args', args)
+    c = await w.execProcess(prog, ['-Command', args]) //指定'-Command'時可將後面參數字串視為須全部執行之整行指令
     console.log(c)
 
 }

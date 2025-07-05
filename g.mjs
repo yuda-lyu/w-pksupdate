@@ -5,6 +5,7 @@ import publishPackages from './src/publishPackages.mjs'
 
 // let names = []
 let names = [
+    //原則給予順序是level[1位]小放前面, 再來才放type[3位]小放前面
     //雖然是無限查找有更新就更新:
     // 但有些是devDependencies依賴前者套件, 至少須給與相同level, 若dependencies依賴前者套件就一定要給予大於level
     // 因devDependencies有出現新版依然會更新與發布, 即便非必要, 所以names盡量給予level由小至大的順序, 減少自動化時非必要之更新發布
@@ -20,9 +21,9 @@ let names = [
     'w-serv-webdata',
     'w-serv-hapi',
 
-    'w-web-api',
-    'w-web-perm',
-    'w-web-sso',
+    // 'w-web-api',
+    // 'w-web-perm',
+    // 'w-web-sso',
 
 ]
 
