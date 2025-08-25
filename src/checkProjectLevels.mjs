@@ -90,7 +90,7 @@ function checkProjectLevels() {
             throw new Error(`套件[${v.name}]的Level[${levelSelf}] 應該為 依賴套件[${levelDepMaxName}]的Level[${levelDepMax}] +1`)
         }
 
-        console.log(`套件[${v.name}]的Level[${levelSelf}], 依賴最高Level套件[${levelDepMaxName}]的Level[${levelDepMax}]`)
+        // console.log(`套件[${v.name}]的Level[${levelSelf}], 依賴最高Level套件[${levelDepMaxName}]的Level[${levelDepMax}]`)
     })
 
 }
