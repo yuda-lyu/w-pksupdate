@@ -1,5 +1,6 @@
 import _ from 'lodash-es'
 import w from 'wsemi'
+import execProcess from 'wsemi/src/execProcess.mjs'
 
 
 async function ectScripts(pdi, scps) {
@@ -27,9 +28,23 @@ async function ectScripts(pdi, scps) {
     ]
     args = _.join(args, ' ; ') //合併為整行指令
     // console.log('args', args)
-    c = await w.execProcess(prog, ['-Command', args]) //指定'-Command'時可將後面參數字串視為須全部執行之整行指令
-    console.log(c)
 
+    let cbStdout = (cdata) => {
+        // console.log('stdout', cdata)
+        console.log(cdata)
+        c += cdata + '\n'
+    }
+    let cbStderr = (cdata) => {
+        // console.log('stderr', cdata)
+        console.log(cdata)
+        c += cdata + '\n'
+    }
+
+    //執行指令時訊息會混合使用cbStdout與cbStderr, 故統一攔截與回傳再判斷
+    await execProcess(prog, ['-Command', args], { cbStdout, cbStderr }) //指定'-Command'時可將後面參數字串視為須全部執行之整行指令
+        .catch(() => { })
+
+    return c
 }
 
 

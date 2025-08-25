@@ -40,9 +40,9 @@ let names = [
     'w-serv-webdata',
     'w-serv-hapi',
 
-    // 'w-web-api',
-    // 'w-web-perm',
-    // 'w-web-sso',
+    'w-web-sso',
+    'w-web-perm',
+    'w-web-api',
 
 ]
 
