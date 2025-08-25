@@ -1,7 +1,9 @@
+import path from 'path'
 import fs from 'fs'
 import _ from 'lodash-es'
 import w from 'wsemi'
 import ectScripts from './ectScripts.mjs'
+import checkNpmVersion from './checkNpmVersion.mjs'
 
 
 async function runScript(pdi, msg = 'update pks') {
@@ -14,7 +16,7 @@ async function runScript(pdi, msg = 'update pks') {
     //   devDependencies: [ { name: 'w-converhp', verOld: '^2.0.17', verNew: '^2.0.18' } ]
     // }
 
-    let fpscp = `${pdi.path}/script.txt`
+    let fpscp = path.resolve(pdi.path, 'script.txt')
 
     let c = fs.readFileSync(fpscp, 'utf8')
     // console.log('c', c)
@@ -56,13 +58,20 @@ async function runScript(pdi, msg = 'update pks') {
 
                     let e1 = `Browserslist: caniuse-lite is outdated.`
                     if (err.indexOf(e1) >= 0) {
-                        //rollup編譯提示caniuse-lite報錯, 不視為錯誤
+                        //rollup編譯提示Browserslist報錯, 不視為錯誤
                         console.log(err) //err為正常訊息
                         return
                     }
 
-                    let e2 = `Creating a browser bundle that depends on Node.js built-in modules`
+                    let e2 = `Browserslist: browsers data` //Browserslist: browsers data (caniuse-lite) is 6 months old.
                     if (err.indexOf(e2) >= 0) {
+                        //rollup編譯提示Browserslist報錯, 不視為錯誤
+                        console.log(err) //err為正常訊息
+                        return
+                    }
+
+                    let e3 = `Creating a browser bundle that depends on Node.js built-in modules`
+                    if (err.indexOf(e3) >= 0) {
                         //rollup編譯提示前端套件會依賴Node.js內建模組報錯, 不視為錯誤
                         console.log(err) //err為正常訊息
                         return
@@ -157,6 +166,25 @@ async function runScript(pdi, msg = 'update pks') {
         .catch((err) => {
             console.log('runScript catch', err)
         })
+
+    //偵測npm, 確認套件已能取得與安裝
+    if (true) {
+
+        let fppkg = path.resolve(pdi.path, 'package.json')
+
+        let j = fs.readFileSync(fppkg, 'utf8')
+
+        let o = w.j2o(j)
+
+        let versionNew = o.version
+
+        let b = await checkNpmVersion(pdi.name, versionNew)
+
+        if (!b) {
+            throw new Error(`npm上找不到[${pdi.name}@${pdi.version}]`)
+        }
+
+    }
 
     // console.log('runScript finish')
 }
