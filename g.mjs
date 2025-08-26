@@ -29,6 +29,7 @@ let names = [
     // 'w-dwdata-binance',
 
     'w-dwdata-builder',
+    'w-dwdata-ftp',
     'w-dwdata-tweq',
     'w-dwdata-tweqod',
     'w-dwdata-tweqmp',
