@@ -79,7 +79,7 @@ async function runScript(pdi, msg = 'update pks') {
 
             //     // throw new Error(err)
             // })
-            console.log('useNode msg', msg)
+            console.log('useNode:::', msg)
             return //直接跳出
         }
 
@@ -99,7 +99,7 @@ async function runScript(pdi, msg = 'update pks') {
 
             //     // throw new Error(err)
             // })
-            console.log('useBin msg', msg)
+            console.log('useBin:::', msg)
             return //直接跳出
         }
 
@@ -134,7 +134,7 @@ async function runScript(pdi, msg = 'update pks') {
 
             //     // throw new Error(err)
             // })
-            console.log('useGit msg', msg)
+            console.log('useGit:::', msg)
             return //直接跳出
         }
 
@@ -160,7 +160,7 @@ async function runScript(pdi, msg = 'update pks') {
 
             //     // throw new Error(err)
             // })
-            console.log('useNpm msg', msg)
+            console.log('useNpm:::', msg)
             let cerr
             cerr = 'You cannot publish over the previously published versions'
             if (msg.indexOf(cerr) >= 0) {
