@@ -28,6 +28,7 @@ let names = [
     // 'w-data-syncer',
     // 'w-dwdata-binance',
 
+    'w-data-scheduler',
     'w-dwdata-builder',
     'w-dwdata-ftp',
     'w-dwdata-tweq',
