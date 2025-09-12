@@ -4,18 +4,34 @@ import w from 'wsemi'
 
 async function checkNpmVersionCore(name, version) {
 
-    //查metadata
+    //查主清單內是否有指定name與version
     console.log(`checking metadata...${name}@${version}`)
-    let url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`
-    let res = await fetch(url)
-    if (!res.ok) {
-        console.log(`${name}@${version} metadata not found: ${res.status}`)
+    let urlNV = `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`
+    let resNV = await fetch(urlNV)
+    if (!resNV.ok) {
+        console.log(`${name}@${version} metadata not found: ${resNV.status}`)
+        return false
+    }
+
+    //查主清單內是否有包含version
+    console.log(`checking versions list...${name}@${version}`)
+    let urlList = `https://registry.npmjs.org/${encodeURIComponent(name)}`
+    let resList = await fetch(urlList, {
+        headers: { 'accept': 'application/vnd.npm.install-v1+json' },
+    })
+    if (!resList.ok) {
+        console.log(`${name} versions list not ready: ${resList.status}`)
+        return false
+    }
+    let listJson = await resList.json()
+    if (!listJson?.versions?.[version]) {
+        console.log(`${name}@${version} not in versions list`)
         return false
     }
 
     //查tarball
     console.log(`checking tarball...${name}@${version}`)
-    let body = await res.json()
+    let body = await resNV.json()
     let tarball = body.dist?.tarball
     if (!tarball) {
         console.log(`${name}@${version} tarball missing`)
