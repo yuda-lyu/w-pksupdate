@@ -1,21 +1,18 @@
-// import _ from 'lodash-es'
-// import w from 'wsemi'
+import _ from 'lodash-es'
+import w from 'wsemi'
 import publishPackages from './src/publishPackages.mjs'
 import checkProjectLevels from './src/checkProjectLevels.mjs'
+import sortProjectLevels from './src/sortProjectLevels.mjs'
 
 
-checkProjectLevels()
+let ps = checkProjectLevels()
+// console.log('ps', ps)
 
-// let names = []
 let names = [
-    //原則給予順序是level[1位]小放前面, 再來才放type[3位]小放前面
-    //雖然是無限查找有更新就更新:
-    // 但有些是devDependencies依賴前者套件, 至少須給與相同level, 若dependencies依賴前者套件就一定要給予大於level
-    // 因devDependencies有出現新版依然會更新與發布, 即便非必要, 所以names盡量給予level由小至大的順序, 減少自動化時非必要之更新發布
 
     'w-pubsub',
 
-    // 'w-zip', //有些套件需要解壓縮(例如w-dwload-dlp), 目前尚未有偵測level優化更新順序, 故先放前面
+    // 'w-zip',
 
     // 'w-dwload-m3u8',
     // 'w-dwload-dlp',
@@ -47,6 +44,11 @@ let names = [
     'w-web-api',
 
 ]
+
+let nameLevels = sortProjectLevels(ps, names, { returnObj: true })
+console.log('nameLevels', nameLevels)
+
+names = _.map(nameLevels, 'name')
 
 await publishPackages(names)
     .then(() => {

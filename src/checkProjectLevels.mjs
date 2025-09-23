@@ -93,6 +93,7 @@ function checkProjectLevels() {
         // console.log(`套件[${v.name}]的Level[${levelSelf}], 依賴最高Level套件[${levelDepMaxName}]的Level[${levelDepMax}]`)
     })
 
+    return ps
 }
 
 
