@@ -19,7 +19,6 @@ async function ectScripts(pdi, scps) {
 
     let prog = 'powershell'
     let args = []
-    let c = ''
 
     args = [
         `cd "${pdi.path}"`,
@@ -29,6 +28,7 @@ async function ectScripts(pdi, scps) {
     args = _.join(args, ' ; ') //合併為整行指令
     // console.log('args', args)
 
+    let c = ''
     let cbStdout = (cdata) => {
         // console.log('stdout', cdata)
         console.log(cdata)
@@ -40,7 +40,7 @@ async function ectScripts(pdi, scps) {
         c += cdata + '\n'
     }
 
-    //執行指令時訊息會混合使用cbStdout與cbStderr, 故統一攔截與回傳再判斷
+    //執行指令時訊息會混合使用cbStdout與cbStderr, 先掛載即時顯示, 合併後回傳再供外部使用判斷
     await execProcess(prog, ['-Command', args], { cbStdout, cbStderr }) //指定'-Command'時可將後面參數字串視為須全部執行之整行指令
         .catch(() => { })
 
