@@ -16,4 +16,4 @@ b = await checkNpmVersion(name, version)
 console.log(name, version, b)
 
 
-//node g.checkNpmVersion.mjs
+//node g_test_checkNpmVersion.mjs

@@ -59,4 +59,4 @@ await publishPackages(names)
     })
 
 
-//node g.mjs
+//node g.updateAndPublic.mjs
