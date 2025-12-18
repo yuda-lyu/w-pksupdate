@@ -10,7 +10,7 @@ let ps = checkProjectLevels()
 
 let names = [
 
-    'w-pubsub',
+    // 'w-pubsub',
 
     // 'w-zip',
 
@@ -25,12 +25,12 @@ let names = [
     // 'w-data-syncer',
     // 'w-dwdata-binance',
 
-    'w-data-scheduler',
-    'w-dwdata-builder',
-    'w-dwdata-ftp',
-    'w-dwdata-tweq',
-    'w-dwdata-tweqod',
-    'w-dwdata-tweqmp',
+    // 'w-data-scheduler',
+    // 'w-dwdata-builder',
+    // 'w-dwdata-ftp',
+    // 'w-dwdata-tweq',
+    // 'w-dwdata-tweqod',
+    // 'w-dwdata-tweqmp',
 
     'w-converhp',
     'w-serv-broadcast',
