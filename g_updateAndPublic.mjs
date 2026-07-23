@@ -63,3 +63,5 @@ await publishPackages(names)
 
 
 //node g_updateAndPublic.mjs
+
+//請幫我執行與監測 node g_updateAndPublic.mjs, 要點詳見本專案內之CLAUDE.md
