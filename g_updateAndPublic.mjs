@@ -8,7 +8,8 @@ import sortProjectLevels from './src/sortProjectLevels.mjs'
 let ps = checkProjectLevels()
 // console.log('ps', ps)
 
-let names = [
+let names 
+names = [
 
     // 'w-pubsub',
 
@@ -25,25 +26,27 @@ let names = [
     // 'w-data-syncer',
     // 'w-dwdata-binance',
 
-    // 'w-data-scheduler',
+    'w-data-scheduler',
+    'w-data-syncer',
     // 'w-dwdata-builder',
     // 'w-dwdata-ftp',
     // 'w-dwdata-tweq',
     // 'w-dwdata-tweqod',
     // 'w-dwdata-tweqmp',
 
-    'w-converhp',
-    'w-serv-broadcast',
-    'w-serv-orm',
-    'w-sync-webdata',
-    'w-serv-webdata',
-    'w-serv-hapi',
+    // 'w-converhp',
+    // 'w-serv-broadcast',
+    // 'w-serv-orm',
+    // 'w-sync-webdata',
+    // 'w-serv-webdata',
+    // 'w-serv-hapi',
 
-    'w-web-sso',
-    'w-web-perm',
-    'w-web-api',
+    // 'w-web-sso',
+    // 'w-web-perm',
+    // 'w-web-api',
 
 ]
+names = []
 
 let nameLevels = sortProjectLevels(ps, names, { returnObj: true })
 console.log('nameLevels', nameLevels)
@@ -59,4 +62,4 @@ await publishPackages(names)
     })
 
 
-//node g.updateAndPublic.mjs
+//node g_updateAndPublic.mjs

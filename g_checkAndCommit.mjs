@@ -39,4 +39,4 @@ git push origin master:master
 })
 
 
-//node g.checkAndCommit.mjs
+//node g_checkAndCommit.mjs

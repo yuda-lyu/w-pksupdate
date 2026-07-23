@@ -30,7 +30,7 @@
     "eslint-plugin-vue": "^9.10.0",
     "json5": "^2.2.3",
     "lodash-es": "^4.18.1",
-    "wsemi": "^1.8.44"
+    "wsemi": "^1.8.65"
   },
   "author": "yuda-lyu(semisphere)",
   "license": "MIT"

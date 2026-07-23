@@ -4,9 +4,10 @@ import w from 'wsemi'
 
 function getFolders() {
 
-    //pfd
-    let pfd = 'D:\\- 006 -        開源\\'
-
+    //pfd //[tag:換位置時要調整]
+    // let pfd = 'D:\\- 006 -        開源\\'
+    let pfd = 'C:\\opensrc\\'
+    
     //vfds
     let vfdsp = w.fsGetFoldersInFolder(pfd)
     let fds = _.map(vfdsp, 'path')

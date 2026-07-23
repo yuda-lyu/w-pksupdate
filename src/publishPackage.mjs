@@ -45,7 +45,7 @@ async function publishPackage(names) {
             //執行[npm i]
             console.log(`${pdi.name} >>> npm i...`)
             // await ectScripts(pdi, `npm i`)
-            await ectScripts(pdi, `npm i --registry=https://registry.npmjs.org/`) //安裝依賴時請求可能會使用 registry / mirror / CDN, 故有可能會出現發布完卻無法安裝問題, 暫時先使用指定registry
+            await ectScripts(pdi, `npm i --registry=https://registry.npmjs.org/`, { main: 'npm' }) //安裝依賴時請求可能會使用 registry / mirror / CDN, 故有可能會出現發布完卻無法安裝問題, 暫時先使用指定registry; main='npm'使安裝失敗(如gyp原生編譯錯誤)立即中止, 不帶病走到git push
             console.log('')
 
             //執行[script]

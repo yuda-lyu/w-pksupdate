@@ -1,5 +1,6 @@
 import path from 'path'
 import fs from 'fs'
+import cp from 'child_process'
 import _ from 'lodash-es'
 import w from 'wsemi'
 import ectScripts from './ectScripts.mjs'
@@ -23,6 +24,8 @@ async function runScript(pdi, msg = 'update pks') {
 
     let scps = w.sep(c, '\n')
     console.log('scps', scps)
+
+    let bCheckDist = false //首次執行git指令前檢查建置產物之旗標
 
     await w.pmSeries(scps, async (v) => {
 
@@ -52,7 +55,7 @@ async function runScript(pdi, msg = 'update pks') {
         let useNode = w.strleft(v, 5) === 'node '
         if (useNode) {
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await ectScripts(pdi, v)
+            let msg = await ectScripts(pdi, v, { main: 'node' }) //main='node'使rollup編譯失敗(輸出含[RollupError])於ectScripts內立即throw
             // .catch((err) => {
             //     console.log('useNode', err)
 
@@ -105,6 +108,27 @@ async function runScript(pdi, msg = 'update pks') {
 
         let useGit = w.strleft(v, 4) === 'git '
         if (useGit) {
+
+            //首次執行git指令前檢查dist內有無[已被刪除且未重建]之git追蹤檔(建置失敗徵兆: cleanFolder刪除後建置未重建, git狀態為D; 殷鑑w-highcharts空殼上架), 有即中止避免push/publish空殼
+            //註: 不可改用[main檔案存在]檢查, 套件區多套件main欄位指向從未存在之檔名(長期狀態, 如w-fft/w-batch/w-pubsub/w-converhp), 會誤擋
+            if (!bCheckDist) {
+                bCheckDist = true
+                let rd = ''
+                try {
+                    rd = cp.execSync('git status --porcelain -- dist', { cwd: pdi.path }).toString()
+                }
+                catch (e) {
+                    rd = '' //非git倉庫等情況跳過檢查
+                }
+                let lns = _.filter(_.split(rd, '\n'), (s) => _.trim(s) !== '')
+                let dels = _.filter(lns, (s) => _.trim(s).slice(0, 2).indexOf('D') >= 0) //遭刪除(含AD: 曾staged後又被刪)
+                let outs = _.filter(lns, (s) => _.trim(s).slice(0, 2).indexOf('D') < 0) //有產出(??新檔, M修改, A新增)
+                //判準: 有刪除且完全無產出=建置失敗空殼(殷鑑w-highcharts: 僅2行D零產出); hash檔名rebuild(舊hash刪+新hash增, 如w-web-api)有產出不誤擋
+                if (_.size(dels) > 0 && _.size(outs) === 0) {
+                    throw new Error(`[${pdi.name}] 建置產物遭刪除且無任何產出:\n${_.join(dels, '\n')}\n中止git與publish`)
+                }
+            }
+
             console.log(`${pdi.name} >>> exec: `, v)
             let msg = await ectScripts(pdi, v)
             // .catch((err) => {
@@ -141,7 +165,7 @@ async function runScript(pdi, msg = 'update pks') {
         let useNpm = w.strleft(v, 4) === 'npm '
         if (useNpm) {
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await ectScripts(pdi, v)
+            let msg = await ectScripts(pdi, v, { main: 'npm' }) //main='npm'使npm指令失敗(輸出含npm error)於ectScripts內立即throw
             // .catch((err) => {
             //     console.log('useNpm', err)
 
@@ -161,19 +185,19 @@ async function runScript(pdi, msg = 'update pks') {
             //     // throw new Error(err)
             // })
             console.log('useNpm:::', msg)
-            let cerr
-            cerr = 'You cannot publish over the previously published versions'
-            if (msg.indexOf(cerr) >= 0) {
-                throw new Error(cerr)
-            }
+            // let cerr
+            // cerr = 'You cannot publish over the previously published versions'
+            // if (msg.indexOf(cerr) >= 0) {
+            //     throw new Error(cerr)
+            // }
             return //直接跳出
         }
 
         throw new Error(`非預期指令: ${v}`)
     })
-        .catch((err) => {
-            console.log('runScript catch', err)
-        })
+        // .catch((err) => {
+        //     console.log('runScript catch', err) //向外報錯
+        // })
 
     //偵測npm, 確認套件已能取得與安裝
     if (true) {
