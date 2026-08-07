@@ -1,14 +1,14 @@
 import _ from 'lodash-es'
 import w from 'wsemi'
-import publishPackages from './src/publishPackages.mjs'
 import checkProjectLevels from './src/checkProjectLevels.mjs'
 import sortProjectLevels from './src/sortProjectLevels.mjs'
+import publishPackages from './src/publishPackages.mjs'
 
 
 let ps = checkProjectLevels()
 // console.log('ps', ps)
 
-let names 
+let names
 names = [
 
     // 'w-pubsub',

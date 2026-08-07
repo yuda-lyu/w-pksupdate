@@ -5,8 +5,9 @@ import w from 'wsemi'
 async function checkNpmVersionCore(name, version) {
 
     //查主清單內是否有指定name與version
+    //url帶時變query繞過CDN快取(packument之Cache-Control為max-age=300, 重試打同一URL會一直命中舊快取; 帶不同query使CF-Cache-Status由HIT變MISS直達origin, 2026-07-27實測)
     console.log(`checking metadata...${name}@${version}`)
-    let urlNV = `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`
+    let urlNV = `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}?t=${Date.now()}`
     let resNV = await fetch(urlNV)
     if (!resNV.ok) {
         console.log(`${name}@${version} metadata not found: ${resNV.status}`)
@@ -15,7 +16,7 @@ async function checkNpmVersionCore(name, version) {
 
     //查主清單內是否有包含version
     console.log(`checking versions list...${name}@${version}`)
-    let urlList = `https://registry.npmjs.org/${encodeURIComponent(name)}`
+    let urlList = `https://registry.npmjs.org/${encodeURIComponent(name)}?t=${Date.now()}`
     let resList = await fetch(urlList, {
         headers: { 'accept': 'application/vnd.npm.install-v1+json' },
     })
@@ -52,7 +53,7 @@ async function checkNpmVersionCore(name, version) {
 async function checkNpmVersion(name, version) {
 
     let b = false
-    for (let i = 0; i <= 100; i++) {
+    for (let i = 0; i <= 300; i++) {
         if (i >= 1) {
             console.log(`重新檢測第 ${i} 次...`)
         }
@@ -65,7 +66,7 @@ async function checkNpmVersion(name, version) {
             break
         }
 
-        await w.delay(2000)
+        await w.delay(3000)
     }
 
     return b

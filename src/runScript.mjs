@@ -195,9 +195,9 @@ async function runScript(pdi, msg = 'update pks') {
 
         throw new Error(`非預期指令: ${v}`)
     })
-        // .catch((err) => {
-        //     console.log('runScript catch', err) //向外報錯
-        // })
+    // .catch((err) => {
+    //     console.log('runScript catch', err) //僅顯示不向外報錯
+    // })
 
     //偵測npm, 確認套件已能取得與安裝
     if (true) {
@@ -213,7 +213,7 @@ async function runScript(pdi, msg = 'update pks') {
         let b = await checkNpmVersion(pdi.name, versionNew)
 
         if (!b) {
-            throw new Error(`npm上找不到[${pdi.name}@${pdi.version}]`)
+            throw new Error(`npm上找不到[${pdi.name}@${versionNew}]`) //須用versionNew(addVersion已bump), pdi.version為掃描時舊版號會誤導
         }
 
     }
