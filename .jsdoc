@@ -1,9 +1,9 @@
 {
     "tags": {
-        "allowUnknownTags": false
+        "allowUnknownTags": true
     },
     "source": {
-        "include": ["src/", "server/"],
+        "include": ["src/"],
         "includePattern": ".+\\.(js(doc|x)?|mjs|vue)$",
         "excludePattern": "(node_modules/|docs)"
     },
