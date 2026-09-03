@@ -62,6 +62,8 @@ await publishPackages(names)
     })
 
 
+//node g_listUpdates.mjs
+
 //node g_updateAndPublic.mjs
 
 //請幫我執行 node checkProjectLevels.mjs, 看套件庫是否有level編錯
