@@ -1,9 +1,12 @@
 node_modules
 .agents
-CLAUDE.md
-AGENTS.md
-.env
-tmp
 .opencode
 .claude
-zAI.md
+CLAUDE*.md
+AGENTS*.md
+.env
+
+tmp
+test/_tmp
+
+zAI*.md

@@ -44,7 +44,7 @@ function updatePackage(pdi) {
     })
     // console.log('o(update)', o)
 
-    let _j = JSON.stringify(o, null, 2)
+    let _j = JSON.stringify(o, null, 2).replace(/\n/g, '\r\n') + '\r\n' //依.editorconfig(end_of_line=crlf, insert_final_newline=true), 與w-pksbatch之runModifyFile寫法一致
     // console.log('_j', _j)
 
     fs.writeFileSync(fppk, _j, 'utf8')
