@@ -5,6 +5,7 @@ import w from 'wsemi'
 import getFolders from './src/getFolders.mjs'
 import parseProject from './src/parseProject.mjs'
 import checkProjectLevels from './src/checkProjectLevels.mjs'
+import getLevelWant from './src/getLevelWant.mjs'
 
 
 //唯讀檢查: 驗證資料夾名之Level標記是否正確, 不做任何 update / publish
@@ -80,12 +81,9 @@ while (_.some(want, (v) => v === null)) {
         let ds = kpInner[v.name]
         if (_.every(ds, (d) => want[d] !== null)) {
             let mx = _.max(_.map(ds, (d) => want[d]))
-            if (mx === 1) {
-                want[v.name] = 3 //特例: 僅依賴w-package-tools(1)者為3, 同checkProjectLevels
-            }
-            else {
-                want[v.name] = mx + 1
-            }
+
+            //與checkProjectLevels共用同一判準, 不可各自手寫(見CLAUDE.md §4)
+            want[v.name] = getLevelWant(v.name, mx)
         }
     })
 }
