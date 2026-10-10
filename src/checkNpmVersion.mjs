@@ -53,7 +53,7 @@ async function checkNpmVersionCore(name, version) {
 async function checkNpmVersion(name, version) {
 
     let b = false
-    for (let i = 0; i <= 300; i++) {
+    for (let i = 0; i <= 2400; i++) { //2400次×3s=2hr(業主2026-10-03調整; 沿革300次≈15分→1200次=1hr→2400次=2hr, 因2026-10-02實測單套件讀取副本延遲達50分鐘, 1hr餘裕不足)
         if (i >= 1) {
             console.log(`重新檢測第 ${i} 次...`)
         }
