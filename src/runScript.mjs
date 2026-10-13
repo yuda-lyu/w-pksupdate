@@ -277,7 +277,7 @@ async function runScript(pdi, msg = 'update pks') {
         let useNode = ln.kind === 'node'
         if (useNode) {
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await ectScripts(pdi, v, { main: 'node' }) //main='node'使node指令失敗(離開碼非0, 或輸出含[RollupError])於ectScripts內立即throw
+            let msg = await ectScripts(pdi, v, { main: 'node' }) //main='node'使node指令失敗(離開碼非0、程序無法啟動, 或輸出含[RollupError])於ectScripts內立即throw
             // .catch((err) => {
             //     console.log('useNode', err)
 
@@ -311,7 +311,7 @@ async function runScript(pdi, msg = 'update pks') {
         let useBin = ln.kind === 'bin'
         if (useBin) {
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await ectScripts(pdi, v) //不判定成敗: jsdoc有ERROR時exit 1但文件照常產出
+            let msg = await ectScripts(pdi, v) //不判定成敗: jsdoc有ERROR時exit 1但文件照常產出; 有拒絕值時ectScripts只留痕一行(未判定(...))
             // .catch((err) => {
             //     console.log('useBin', err)
 
@@ -352,7 +352,7 @@ async function runScript(pdi, msg = 'update pks') {
             }
 
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await ectScripts(pdi, v) //不判定成敗: git commit無變更時exit 1
+            let msg = await ectScripts(pdi, v) //不判定成敗: git commit無變更時exit 1; 有拒絕值時ectScripts只留痕一行(未判定(...))
             // .catch((err) => {
             //     console.log('useGit', err)
 
@@ -388,7 +388,7 @@ async function runScript(pdi, msg = 'update pks') {
         if (useNpm) {
             console.log(`${pdi.name} >>> exec: `, v)
             let msg = await runWithRetry(() => {
-                return ectScripts(pdi, v, { main: 'npm' }) //main='npm'使npm指令失敗(輸出含npm error, 或離開碼非0)於ectScripts內立即throw
+                return ectScripts(pdi, v, { main: 'npm' }) //main='npm'使npm指令失敗(輸出含npm error, 或離開碼非0、程序無法啟動)於ectScripts內立即throw
             }, {
                 ...getRetryPolicy(v), //npm run deploy失敗重試2次、間隔30秒, 其他不重試
                 onRetry: (k, n, err) => {

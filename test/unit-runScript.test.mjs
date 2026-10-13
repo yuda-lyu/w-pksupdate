@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import { isSafeRmTarget, classifyLine, parseScript, loadScript, getRetryPolicy, getRetryMessage, runWithRetry, removeTarget } from '../src/runScript.mjs'
 import { mkFixturePkg, writeScript, cleanTmpRoot } from './tools/mkFixturePkg.mjs'
+import { reFatal } from './tools/fatalWords.mjs'
 
 
 let fdTmp = path.resolve('./test/_tmp/unit-runScript')
@@ -125,7 +126,6 @@ describe('runScript getRetryPolicy(R06 只有 npm run deploy 重試)', function(
     it('重試訊息含套件名、次數、間隔與指令, 且不含守望器比對之致命字樣(避免可自癒之重試被誤當中止)', function() {
         let s = getRetryMessage('w-sync-webdata', 'npm run deploy', 1, 2)
         assert.strictEqual(s, 'w-sync-webdata >>> 重試(第 1/2 次, 間隔 30 秒): npm run deploy')
-        let reFatal = /npm指令失敗|node指令失敗|rollup編譯失敗|建置產物遭刪除|npm上找不到|非預期指令|rm指令失敗|Vue packages version mismatch/
         assert.strictEqual(reFatal.test(s), false)
     })
 

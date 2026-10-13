@@ -1,6 +1,6 @@
 //runScript 與 publishPackage 整合測試(子程序; fixture 於 test/_tmp/runScript-ps, before 建立、after 刪除)
 //子程序以 test/tools/hooksStub.mjs 換掉 checkNpmVersion(publishPackage 另換套件區相關模組), 不碰套件區, 失敗時亦不會卡住 mocha
-//對應需求: R07 執行前檢查(runScript 與 publishPackage 之副作用順序)、R08 rm -r、R02 失敗列之後不執行
+//對應需求: R07 執行前檢查(runScript 與 publishPackage 之副作用順序)、R08 rm -r、R02 失敗列之後不執行; 帳本(CLAUDE_rulebook.md 1.3) R13 未判定列之留痕
 //不含任何 git、deploy、npm publish、npm i
 import assert from 'assert'
 import fs from 'fs'
@@ -97,6 +97,15 @@ describe('runScript 與 publishPackage 整合(子程序)', function() {
         assert.strictEqual(r.ok, true, r.message)
         assert.deepStrictEqual(r.trace, ['mark.mjs A', 'okStderr.mjs', 'ok.mjs', 'mark.mjs B'])
         assert.strictEqual(r.docsExists, false)
+        assert.deepStrictEqual(r.calls, ['checkNpmVersion|sbx-ect-test@0.0.1'])
+        assert.deepStrictEqual(r.unjudged, []) //R13: 成功之 .bin 列不留痕
+    })
+
+    it('runScript: .bin 列 exit 5 → 不中止, 留痕一行後續行下一列並走到最終閘門(R5＋R13)', function() {
+        let r = runCase('runScript', ['node toolg/mark.mjs A', './node_modules/.bin/fakebin 5', 'node toolg/mark.mjs B'])
+        assert.strictEqual(r.ok, true, r.message)
+        assert.deepStrictEqual(r.trace, ['mark.mjs A', 'mark.mjs B'])
+        assert.deepStrictEqual(r.unjudged, ['[sbx-ect-test] 未判定(code[5]): ./node_modules/.bin/fakebin 5'])
         assert.deepStrictEqual(r.calls, ['checkNpmVersion|sbx-ect-test@0.0.1'])
     })
 

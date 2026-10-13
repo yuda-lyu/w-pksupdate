@@ -69,18 +69,50 @@ function createOutputCollector() {
 
 
 /**
- * 取執行失敗之摘要(純函式): execProcess 之 reject 值首行, 去掉結尾冒號
+ * 取執行失敗之摘要(純函式): execProcess 之 reject 值首行, 去掉結尾冒號; 程序無法啟動時再接第二行之錯誤說明
  *
- * @param {*} errExec 輸入 execProcess 之 reject 值, 離開碼非 0 時為'code[N]:\n...'字串, 程序無法啟動時為 Error
- * @returns {String} 回傳摘要字串, 例如'code[3]'、'Error: spawn powershell ENOENT', 無值時回傳''
+ * execProcess(wsemi 1.9.15 起)之 reject 值皆為字串:
+ * 離開碼非 0 為'code[N]:\n<子程序輸出>'(因訊號結束時 N 為 null), 逾時為'timeout[Nms]:\n<子程序輸出>', 只取首行(第二行起為子程序輸出, 已見於顯示文字);
+ * 程序無法啟動為'spawn[錯誤碼]:\n<node 之錯誤說明>', 說明不含參數(如'spawn powershell ENOENT'), 此時沒有子程序輸出, 故接於首行之後, 使摘要看得出是哪個程式無法啟動.
+ * 非字串之 reject 值(如 wsemi 1.9.15 之前之 Error 物件)取 String 後之首行.
+ *
+ * @param {*} errExec 輸入 execProcess 之 reject 值, 無值為 null 或 undefined
+ * @returns {String} 回傳摘要字串, 例如'code[3]'、'timeout[1000ms]'、'spawn[ENOENT] spawn powershell ENOENT', 無值時回傳''
  */
 function getExecDetail(errExec) {
     if (errExec === null || errExec === undefined) {
         return ''
     }
-    let s = String(errExec).split('\n')[0]
-    s = s.replace(/:\s*$/, '')
+    let lines = String(errExec).split('\n')
+    let s = lines[0].replace(/:\s*$/, '')
+    if (s.startsWith('spawn[') && w.isestr(lines[1])) {
+        s = `${s} ${lines[1]}`
+    }
     return s
+}
+
+
+/**
+ * 未判定之列有拒絕值時之留痕訊息(純函式)
+ *
+ * 未給 main 之列(.bin、git 列與 g_checkAndCommit)不判定成敗(jsdoc 有 ERROR 時 exit 1、git commit 無變更時 exit 1 皆屬良性), 但離開碼非 0 或程序無法啟動時須留下一行痕跡, 否則 log 只見空白回顯而無從察覺.
+ * 只留痕、不中止、不改判定; ectScripts 只在判定未失敗後呼叫(判定為失敗之列改為 throw).
+ * 訊息不可含守望器比對之致命字樣(npm指令失敗、node指令失敗、rollup編譯失敗、rm指令失敗、建置產物遭刪除、npm上找不到、非預期指令、Vue packages version mismatch), 否則良性之 exit 1 會被誤當中止.
+ *
+ * @param {Object} [p={}] 輸入資料物件
+ * @param {String} [p.name=''] 輸入套件名稱字串
+ * @param {*} [p.errExec=null] 輸入 execProcess 之 reject 值, 成功為 null
+ * @param {String|Array} [p.scps=[]] 輸入指令字串或指令陣列, 陣列依序以' ; '串接
+ * @returns {String} 回傳留痕訊息字串, 例如'[w-gis] 未判定(code[1]): ./node_modules/.bin/jsdoc -c .jsdoc', 無拒絕值時回傳''
+ */
+function getUnjudgedMessage({ name = '', errExec = null, scps = [] } = {}) {
+    if (errExec === null || errExec === undefined) {
+        return ''
+    }
+    if (!w.isarr(scps)) {
+        scps = [scps]
+    }
+    return `[${name}] 未判定(${getExecDetail(errExec)}): ${_.join(scps, ' ; ')}`
 }
 
 
@@ -132,6 +164,7 @@ function judgeResult({ main, errExec = null, out = '', err = '' } = {}) {
  * 於套件資料夾內以 PowerShell 執行指令並判定成敗
  *
  * 組法見 composeCommand, 判定見 judgeResult; 判定為失敗即 throw, 訊息為'[套件名] <label>(<detail>): <指令>\n<輸出>'.
+ * 未判定之列(未給 main)有拒絕值時不中止, 只印一行留痕, 見 getUnjudgedMessage.
  *
  * @param {Object} pdi 輸入套件資訊物件, 須含 name 與 path
  * @param {String|Array} scps 輸入指令字串或指令陣列
@@ -184,6 +217,12 @@ async function ectScripts(pdi, scps, opt = {}) {
         throw new Error(`[${pdi.name}] ${r.label}${detail}: ${_.join(scps, ' ; ')}\n${c}`)
     }
 
+    //未判定之列有拒絕值(離開碼非0或程序無法啟動)時留痕一行, 不中止
+    let msgUnjudged = getUnjudgedMessage({ name: pdi.name, errExec, scps })
+    if (msgUnjudged !== '') {
+        console.log(msgUnjudged)
+    }
+
     return c
 }
 
@@ -192,6 +231,7 @@ export {
     composeCommand,
     createOutputCollector,
     getExecDetail,
+    getUnjudgedMessage,
     judgeResult
 }
 export default ectScripts
