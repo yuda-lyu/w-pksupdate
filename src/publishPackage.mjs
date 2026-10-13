@@ -4,7 +4,7 @@ import parseProject from './parseProject.mjs'
 import getUpdate from './getUpdate.mjs'
 import updatePackage from './updatePackage.mjs'
 import ectScripts from './ectScripts.mjs'
-import runScript from './runScript.mjs'
+import runScript, { loadScript } from './runScript.mjs'
 
 
 async function publishPackage(names) {
@@ -37,6 +37,9 @@ async function publishPackage(names) {
 
         if (pdi.update) {
             console.log('pdi', pdi)
+
+            //執行前檢查script.txt: 有非預期指令即於任何副作用(update package.json、npm i、addVersion等)之前中止, 否則package.json已被改寫, 重跑時會被getUpdate判為已對齊而略過
+            loadScript(pdi)
 
             //執行[update package.json]
             console.log(`${pdi.name} >>> update package.json...`)
