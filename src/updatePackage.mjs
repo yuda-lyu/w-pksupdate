@@ -2,6 +2,7 @@ import fs from 'fs'
 import _ from 'lodash-es'
 import w from 'wsemi'
 import JSON5 from 'json5'
+import { assertConfinedToTestTmp, assertSingleLink } from './testGuard.mjs'
 
 
 function updatePackage(pdi) {
@@ -17,6 +18,10 @@ function updatePackage(pdi) {
     if (!pdi.update) {
         return 'no update'
     }
+
+    //測試環境下只可作用於 test/_tmp 內之 fixture(帳本 R25.2; 第 5 次外審 opus F07)
+    assertConfinedToTestTmp('updatePackage', pdi.path)
+    assertSingleLink('updatePackage', `${pdi.path}/package.json`) //硬連結會改到別名檔案(第 5 次外審 sol F02)
 
     let fppk = `${pdi.path}/package.json`
 

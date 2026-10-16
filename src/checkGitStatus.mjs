@@ -3,9 +3,13 @@ import path from 'path'
 import { execSync } from 'child_process'
 import _ from 'lodash-es'
 import w from 'wsemi'
+import { assertRealExecAllowed } from './testGuard.mjs'
 
 
 let checkGitStatus = (fd) => {
+
+    //測試環境下不執行真實 git status(帳本 R25)
+    assertRealExecAllowed('checkGitStatus', '將執行真實 git status')
 
     //r
     let r = {

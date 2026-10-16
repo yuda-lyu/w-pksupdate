@@ -3,6 +3,7 @@ import w from 'wsemi'
 import checkProjectLevels from './src/checkProjectLevels.mjs'
 import sortProjectLevels from './src/sortProjectLevels.mjs'
 import publishPackages from './src/publishPackages.mjs'
+import runMain, { exitAfterFlush } from './src/runMain.mjs'
 
 
 let ps = checkProjectLevels()
@@ -53,13 +54,11 @@ console.log('nameLevels', nameLevels)
 
 names = _.map(nameLevels, 'name')
 
-await publishPackages(names)
-    .then(() => {
-        console.log(`>>> finish all`)
-    })
-    .catch((err) => {
-        console.log(err)
-    })
+//中止時錯誤照常印出且無`>>> finish all`, 但離開碼為1(帳本R16; 原寫法.catch只印出, 中止時離開碼為0)
+process.exitCode = await runMain(() => publishPackages(names))
+
+//逾時寬限到期而孤兒仍持有輸出管道時, 主行程不會自行結束(帳本R16.4): 排空輸出後強制以該離開碼結束
+await exitAfterFlush(process.exitCode)
 
 
 //node g_listUpdates.mjs

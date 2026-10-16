@@ -7,6 +7,7 @@ import fs from 'fs'
 import path from 'path'
 import cp from 'child_process'
 import { mkFixturePkg, mkDocs, writeScript, readTrace, cleanTmpRoot } from './tools/mkFixturePkg.mjs'
+import { getRealPath } from './tools/testEnv.mjs' //子程序的 runScript 模式刻意走真實 PowerShell(帳本 R25.5), 須明確給原 PATH(全域測試環境預設從 PATH 移除 PowerShell, R25.6)
 
 
 let fdTmp = path.resolve('./test/_tmp/runScript-ps')
@@ -23,8 +24,19 @@ let runCase = (mode, script, opt = {}) => {
         mkDocs(fdPkg)
     }
     writeScript(fdPkg, script)
+    return spawnCase(mode, opt)
+}
+
+//不重建 docs 與 script.txt(呼叫端已備妥, 如占用情境), 只清 trace 與 calls 後執行子程序
+let runCaseNoDocs = (mode, opt = {}) => {
+    fs.rmSync(path.join(fdPkg, '_trace.txt'), { force: true })
+    fs.rmSync(fpCalls, { force: true })
+    return spawnCase(mode, opt)
+}
+
+let spawnCase = (mode, opt = {}) => {
     let r = cp.spawnSync(process.execPath, ['--import', './test/tools/hooksStub.mjs', 'test/tools/runCase.mjs', mode], {
-        env: { ...process.env, STUB_MODE: mode, FIXTURE_PKG: fdPkg, FIXTURE_NAME: 'sbx-ect-test', CALLS_FILE: fpCalls },
+        env: { ...process.env, PATH: getRealPath(), W_PKSUPDATE_TEST: '1', STUB_MODE: mode, FIXTURE_PKG: fdPkg, FIXTURE_NAME: 'sbx-ect-test', CALLS_FILE: fpCalls, ...(opt.env || {}) },
         encoding: 'utf8',
         timeout: 120000,
     })
@@ -50,7 +62,20 @@ describe('runScript 與 publishPackage 整合(子程序)', function() {
     })
 
     after(function() {
-        fs.rmSync(fdTmp, { recursive: true, force: true })
+        //Windows 下占用者(R14 案例之 cwd 占用行程)剛結束時資料夾句柄可能尚未釋放(EPERM/EBUSY): 重試約 5 秒再放棄, 清理的暫時失敗不應使整個測試檔失敗(第二輪實跑偶發)
+        let t0 = Date.now()
+        for (;;) {
+            try {
+                fs.rmSync(fdTmp, { recursive: true, force: true })
+                break
+            }
+            catch (err) {
+                if (Date.now() - t0 > 5000) {
+                    throw err
+                }
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+            }
+        }
         cleanTmpRoot()
     })
 
@@ -130,6 +155,76 @@ describe('runScript 與 publishPackage 整合(子程序)', function() {
             'checkNpmVersion|sbx-ect-test@0.0.1',
         ])
         assert.strictEqual(r.docsExists, false) //rm 列由 runScript 以 Node 執行, 不經 ectScripts
+    })
+
+    //---- 帳本 R14: rm -r 遇真實之資料夾占用(子行程 cwd 設在 docs/sub; 占用者為獨立 OS 行程, 不受本行程同步阻塞影響) ----
+    //占用者在占用成立後寫 marker, 並於 ms 毫秒後自行結束
+    let startHolder = (ms) => {
+        let marker = path.join(fdTmp, `holder-${Date.now()}.ready`)
+        let code = `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ready'); setTimeout(() => {}, ${ms})`
+        let h = cp.spawn(process.execPath, ['-e', code], { cwd: path.join(fdPkg, 'docs', 'sub'), stdio: 'ignore' })
+        let t0 = Date.now()
+        while (!fs.existsSync(marker) && Date.now() - t0 < 10000) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+        }
+        assert.ok(fs.existsSync(marker), '占用者未就緒')
+        return h
+    }
+    //結束占用者並等到它確實消失(同步輪詢; 避免它仍占用 docs 而使後續案例之清理失敗)
+    let killHolder = (h) => {
+        try {
+            h.kill()
+        }
+        catch (err) { /* 已結束 */ }
+        let t0 = Date.now()
+        for (;;) {
+            try {
+                process.kill(h.pid, 0)
+            }
+            catch (err) {
+                return
+            }
+            if (Date.now() - t0 > 8000) {
+                return
+            }
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+        }
+    }
+
+    it('R14.1 rm -r docs 遇暫時占用(約 1.2 秒後釋放)→ 重試後成功並續行下一列', function() {
+        fs.rmSync(path.join(fdPkg, 'docs'), { recursive: true, force: true })
+        mkDocs(fdPkg)
+        let h = startHolder(1200)
+        try {
+            writeScript(fdPkg, ['rm -r docs', 'node toolg/mark.mjs B'])
+            let r = runCaseNoDocs('runScript')
+            assert.strictEqual(r.ok, true, r.message)
+            assert.deepStrictEqual(r.trace, ['mark.mjs B']) //rm 列成功後續行
+            assert.strictEqual(r.docsExists, false)
+        }
+        finally {
+            killHolder(h)
+        }
+    })
+
+    it('R14.2 rm -r docs 遇持續占用 → 用盡 20 次×500ms 後 throw rm指令失敗(含路徑、碼、已重試20次), 其後之列不執行, 耗時約 10 秒', function() {
+        fs.rmSync(path.join(fdPkg, 'docs'), { recursive: true, force: true })
+        mkDocs(fdPkg)
+        let h = startHolder(120000)
+        try {
+            let t0 = Date.now()
+            writeScript(fdPkg, ['rm -r docs', 'node toolg/mark.mjs B'])
+            let r = runCaseNoDocs('runScript')
+            let dt = Date.now() - t0
+            assert.strictEqual(r.ok, false)
+            assert.ok(/^\[sbx-ect-test\] rm指令失敗: 無法移除\[.*docs\]: (EPERM|EBUSY)\((rm|rmdir|unlink)\), 已重試20次\(間隔500ms\); 目標可能已部分刪除/.test(r.message), r.message)
+            assert.deepStrictEqual(r.trace, []) //其後之列未執行
+            assert.strictEqual(r.docsExists, true)
+            assert.ok(dt >= 9000 && dt < 60000, `耗時 ${dt}ms`)
+        }
+        finally {
+            killHolder(h)
+        }
     })
 
 })

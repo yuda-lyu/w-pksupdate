@@ -50,6 +50,47 @@ process.exit(3)
 trace()
 console.log('Error [RollupError]: "default" is not exported by "src/lib.mjs", imported by "src/bad.mjs".')
 `,
+    //自接 catch 後 console.log(err) 而 exit 0(全庫 19 個 repo、35 處之實際形態; Error 物件印出時帶堆疊框)(R15)
+    'toolg/throwCaught.mjs': `import trace from './_trace.mjs'
+trace()
+async function core() {
+    throw new Error('boom-caught')
+}
+core().catch((err) => { console.log(err) })
+`,
+    //字串 reject(w-package-tools 之 invalid fpSrc 形態, 無堆疊)自接 catch 印出而 exit 0(R15 固定字串)
+    'toolg/rejectStringCaught.mjs': `import trace from './_trace.mjs'
+trace()
+Promise.reject('invalid fpSrc: C:\\\\x\\\\nofile.mjs').catch((err) => { console.log(err) })
+`,
+    //未處理的 rejection: 預設 exit 1; 加 --unhandled-rejections=warn 則印 (node:pid) UnhandledPromiseRejectionWarning 與堆疊而 exit 0(第二輪 N1)
+    'toolg/unhandled.mjs': `import trace from './_trace.mjs'
+trace()
+async function core() {
+    throw new Error('build failed: unhandled')
+}
+core()
+`,
+    //靜默 catch 而 exit 0(R15.7 設計限制: 無任何文字特徵)
+    'toolg/silentCatch.mjs': `import trace from './_trace.mjs'
+trace()
+Promise.reject(new Error('silent')).catch(() => {})
+`,
+    //卡住 120 秒(R18 逾時)
+    'toolg/hang.mjs': `import trace from './_trace.mjs'
+trace()
+setTimeout(() => {}, 120000)
+`,
+    //啟動一個脫離之孫程序(繼承 stdout/stderr, 卡住 120 秒, 命令列帶唯一標記)後立即結束(R18.6: 孤兒持有輸出管道, execProcess 須等孤兒結束才落定)
+    'toolg/orphan.mjs': `import cp from 'child_process'
+import path from 'path'
+import trace from './_trace.mjs'
+trace()
+let id = process.argv[2] || 'x'
+let c = cp.spawn(process.execPath, [path.resolve('./toolg/hang.mjs'), id], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] })
+c.unref()
+console.log('orphan spawned')
+`,
     //N 位元組填充後接判定字樣, 單次 write, exit 0
     'toolg/bigThenMarker.mjs': `let n = Number(process.argv[2] || 0)
 process.stdout.write('x'.repeat(n) + 'Error [RollupError]: split-test marker\\n')
@@ -149,10 +190,11 @@ function mkDocs(fdPkg) {
  * @param {String} fdPkg 輸入套件資料夾路徑字串
  * @param {Array} lines 輸入各列字串陣列
  */
-function writeScript(fdPkg, lines) {
+function writeScript(fdPkg, lines, opt = {}) {
+    //opt.stubbed=true 只供「同一行程內以 opt.exec 注入樁、不會真的執行任何列」之測試(unit-runScript-gates、unit-publishPackage), 解除下列禁止; 其餘測試一律不得使用
     let forbid = /^\s*#?\s*npm\s+publish|run\s+deploy|^\s*#?\s*git\b|^\s*#?\s*npm\s+(i|install)\b/
     for (let s of lines) {
-        if (forbid.test(s)) {
+        if (!opt.stubbed && forbid.test(s)) {
             throw new Error(`測試不得含 git、deploy、npm publish、npm i 列: ${s}`)
         }
     }
