@@ -7,6 +7,7 @@ import getUpdate from './getUpdate.mjs'
 import updatePackage from './updatePackage.mjs'
 import ectScripts from './ectScripts.mjs'
 import runScript, { loadScript } from './runScript.mjs'
+import { normalizeRegistryUrl } from './registryConfig.mjs'
 import { requireInjected, assertConfinedToTestTmp, assertSingleLink } from './testGuard.mjs'
 
 
@@ -60,8 +61,10 @@ function restoreFiles(pdi, stage, err, bak) {
  * node_modules、dist、docs、本機 git 之 index 與 commit 不還原(重跑時重建).
  *
  * @param {Array} names 輸入套件名稱陣列, 空陣列表全部套件
- * @param {Object} [opt={}] 輸入設定物件(供測試注入)
- * @param {Object} [opt.deps] 輸入相依函數覆寫物件, 可含 getFolders、parseProject、getUpdate、updatePackage、ectScripts、loadScript、runScript, 未給者用正式實作; 測試環境下除 loadScript 外皆須給(帳本 R25)
+ * @param {Object} opt 輸入設定物件
+ * @param {Object} opt.registryConfig 輸入倉庫設定(必給, 由 resolveRegistryConfig 取得; 帳本 R27): { main, mirrors }, main 為主倉庫位址, mirrors 為同時發布之鏡像位址陣列; 缺 main 即 throw, 不退回任何預設倉庫
+ * @param {Function} [opt.onMirrorResult] 輸入鏡像發布結果回呼(轉交 runScript), 供呼叫端彙整結束摘要
+ * @param {Object} [opt.deps] 輸入相依函數覆寫物件(供測試注入), 可含 getFolders、parseProject、getUpdate、updatePackage、ectScripts、loadScript、runScript, 未給者用正式實作; 測試環境下除 loadScript 外皆須給(帳本 R25)
  * @param {Boolean} [opt.checkRelease=true] 輸入是否檢查必要列與版本遞增(帳本 R20), 轉交 loadScript 與 runScript, 僅供測試夾具關閉
  * @returns {Promise} 回傳 Promise, resolve 回傳是否有發布
  */
@@ -77,6 +80,13 @@ async function publishPackage(names, opt = {}) {
 
     //測試環境下未注入會掃描套件區、改寫 package.json、執行 npm i 與 script 之相依即 throw, 於任何副作用之前(帳本 R25)
     requireInjected('publishPackage', _.get(opt, 'deps'), ['getFolders', 'parseProject', 'getUpdate', 'updatePackage', 'ectScripts', 'runScript'])
+
+    //倉庫設定(帳本 R27): 必須由呼叫端給定(publishPackages 解析一次後傳入), 缺主倉庫即於任何副作用之前 throw, 不退回預設倉庫; 位址入口即正規化與驗證(之後組進指令列)
+    if (!_.get(opt, 'registryConfig.main')) {
+        throw new Error('[registry] publishPackage 需 opt.registryConfig(由 resolveRegistryConfig 取得之 { main, mirrors }), 不退回預設倉庫')
+    }
+    let regMain = normalizeRegistryUrl(opt.registryConfig.main)
+    let regMirrors = _.map(_.get(opt, 'registryConfig.mirrors', []), (x) => normalizeRegistryUrl(x))
 
     let deps = {
         getFolders,
@@ -137,7 +147,7 @@ async function publishPackage(names, opt = {}) {
                 stage = 'npm i'
                 console.log(`${pdi.name} >>> npm i...`)
                 // await ectScripts(pdi, `npm i`)
-                await deps.ectScripts(pdi, `npm i --registry=https://registry.npmjs.org/`, { main: 'npm' }) //安裝依賴時請求可能會使用 registry / mirror / CDN, 故有可能會出現發布完卻無法安裝問題, 暫時先使用指定registry; main='npm'使安裝失敗(如gyp原生編譯錯誤)立即中止, 不帶病走到git push
+                await deps.ectScripts(pdi, `npm i --registry=${regMain}`, { main: 'npm', registry: regMain }) //安裝依賴時請求可能會使用 registry / mirror / CDN, 故有可能會出現發布完卻無法安裝問題, 故固定指定主倉庫(發布與確認上架所用之同一倉庫, 帳本R27; 原寫死 npmjs, 改走私有倉庫後剛發布之新版從 npmjs 裝不到而 ETARGET), 不走執行機設定之其他倉庫或鏡像; main='npm'使安裝失敗(如gyp原生編譯錯誤)立即中止, 不帶病走到git push
                 console.log('')
 
                 //執行[script]
@@ -145,6 +155,8 @@ async function publishPackage(names, opt = {}) {
                 console.log(`${pdi.name} >>> update pks...`)
                 await deps.runScript(pdi, `update pks`, {
                     checkRelease,
+                    registryConfig: { main: regMain, mirrors: regMirrors },
+                    onMirrorResult: _.get(opt, 'onMirrorResult'),
                     onRemote: () => {
                         remote = true
                     },

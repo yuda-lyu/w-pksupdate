@@ -5,6 +5,8 @@ import _ from 'lodash-es'
 import w from 'wsemi'
 import ectScripts, { isTimeoutMessage, GIT_FATAL_EXIT_CODE } from './ectScripts.mjs'
 import checkNpmVersion from './checkNpmVersion.mjs'
+import { normalizeRegistryUrl } from './registryConfig.mjs'
+import { publishToMirrors } from './mirrorPublish.mjs'
 import { requireInjected, assertRealExecAllowed, assertConfinedToTestTmp, isTestGuardError } from './testGuard.mjs'
 import { GIT_ALLOWED_SUBS, getGitSubcommand } from './gitSubcommand.mjs'
 
@@ -27,6 +29,55 @@ const RE_READONLY_GIT = new RegExp(String.raw`^git${GIT_GLOBAL_OPTS}\s+(?:status
 //本機 git 列(帳本 R21): add、commit 只改本機 index 與 commit, 不連遠端; 其餘非唯讀 git(push、tag、fetch、remote…)一律視為遠端列
 const RE_LOCAL_GIT = new RegExp(String.raw`^git${GIT_GLOBAL_OPTS}\s+(?:add|commit)(?=\s|$)`)
 const RE_ADD_VERSION = /^node toolg\/addVersion\.mjs(?=\s|$)/
+
+/**
+ * 判斷 npm 指令列是否自帶倉庫旗標(純函式; 帳本 R27.5)
+ *
+ * 命令列旗標優先於 w-pksupdate 以 npm_config_registry 指定之主倉庫, 會使發布/安裝落到設定以外之倉庫, 故於執行前檢查拒絕; 倉庫一律由倉庫設定決定.
+ * 先去引號(PowerShell 去引號後 npm 才收到, 與 parseNpmCmd 同法)再逐記號比對: --registry、其唯一前綴縮寫(npm 的 nopt 接受 --reg、--regi…; 至少 3 字元)、--@scope:registry.
+ *
+ * @param {String} v 輸入指令列字串
+ * @returns {Boolean} 回傳是否自帶倉庫旗標
+ */
+function hasNpmRegistryOverride(v) {
+    let ts = String(v).replace(/["']/g, '').replace(/\s+/g, ' ').trim().split(' ')
+    return _.some(ts, (t) => {
+        if (!t.startsWith('--')) {
+            return false
+        }
+        let name = t.slice(2).split('=')[0].toLowerCase()
+        return (name.length >= 3 && 'registry'.startsWith(name)) || /^@[^:]+:registry$/.test(name)
+    })
+}
+
+
+/**
+ * 取套件 package.json 中會使發布落到倉庫設定以外之設定(純函式以外: 讀 package.json; 讀不到或無法剖析者視為無)
+ *
+ * npm publish 會把 package.json 的 publishConfig 套到發布選項, 其優先於環境變數(僅命令列旗標更高): publishConfig.registry 會壓過 w-pksupdate 指定之主倉庫;
+ * scoped 套件(@scope/name)則適用 scope 專屬的 registry 設定(@scope:registry), 同樣壓過 registry. 本工具僅支援無 scope 且無 publishConfig.registry 之套件, 其餘於執行前檢查拒絕(帳本 R27.5).
+ *
+ * @param {Object} pdi 輸入套件資訊物件, 須含 path
+ * @returns {String} 回傳原因字串; 無問題回傳''
+ */
+function getPublishTargetIssue(pdi) {
+    let o = null
+    try {
+        o = w.j2o(fs.readFileSync(path.resolve(pdi.path, 'package.json'), 'utf8'))
+    }
+    catch (err) {
+        return ''
+    }
+    let name = _.get(o, 'name')
+    if (typeof name === 'string' && name.startsWith('@')) {
+        return `套件名[${name}]為 scoped 套件, scope 專屬之 registry 設定(@scope:registry)會壓過主倉庫設定; 本工具僅支援無 scope 套件`
+    }
+    let r = _.get(o, 'publishConfig.registry')
+    if (r !== undefined && r !== null && r !== '') {
+        return 'package.json 之 publishConfig.registry 會壓過主倉庫設定(npm 規則: publishConfig 優先於環境變數); 請移除, 倉庫一律由倉庫設定決定'
+    }
+    return ''
+}
 
 //入口解析時補的副檔名與資料夾 index(帳本 R17.8, 比照 Node 的 LOAD_AS_FILE、LOAD_AS_DIRECTORY; Node 不補 .mjs、.cjs, 第二輪 N4)
 const MAIN_EXTS = ['.js', '.json', '.node']
@@ -272,6 +323,9 @@ function classifyLine(v) {
         if (hasShellControl(v)) {
             return { kind: 'unexpected', reason: '含 shell 控制運算子(; | & < > ( ) { }、反引號、$( ), 無法判定為單一指令, 請拆成多列' }
         }
+        if (kindRaw === 'npm' && hasNpmRegistryOverride(v)) {
+            return { kind: 'unexpected', reason: 'npm 列不得自帶 --registry(倉庫一律由 w-pksupdate 之倉庫設定決定, 見 README〈倉庫設定〉)' }
+        }
         //git 列之子命令須在允許集合內(帳本 R7.2): 錯字(git pusj)、無子命令(git --version)、尚未納管之子命令(pull、tag…)於任何副作用之前攔下; 區分大小寫(git 自己亦然)
         if (kindRaw === 'git') {
             let sub = getGitSubcommand(v, { keepCase: true })
@@ -364,6 +418,12 @@ function loadScript(pdi, msg = 'update pks', opt = {}) {
     if (_.size(us) > 0) {
         let s = _.join(_.map(us, (ln) => `第${ln.no}列[${ln.raw}](${ln.reason})`), ', ')
         throw new Error(`[${pdi.name}] 非預期指令(執行前檢查, 尚未執行任何列): ${s}`)
+    }
+
+    //發布目標檢查(帳本R27.5): publishConfig.registry 與 scoped 套件名會使發布落到倉庫設定以外之倉庫, 於任何副作用之前拒絕(沿用『非預期指令』守望字樣)
+    let issue = getPublishTargetIssue(pdi)
+    if (issue !== '') {
+        throw new Error(`[${pdi.name}] 非預期指令(執行前檢查, 尚未執行任何列): ${issue}`)
     }
 
     //必要列(帳本R20.1、R20.6)與列序(R20.5): 以改寫後之指令比對, 故註解形與已去#形皆接受, 指令之後可接參數; 帶額外參數之註解(#npm publish --tag next)不是改寫對象, 視為缺
@@ -772,6 +832,7 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
 
     //注入點(僅供測試, 未給用正式實作; 見帳本1.5): exec取代ectScripts, checkNpm取代checkNpmVersion, gitStatusDist取代dist閘門之git status, nowMs取代Date.now, checkRelease=false略過必要列與版本遞增檢查(R20), retryDelayMs縮短deploy重試間隔(R9)
     //  例外: opt.onRemote為正式路徑使用(publishPackage傳入, 帳本R21.3), 於第一個遠端列(git push、deploy、publish; git add/commit不算)通過全部閘門後、exec之前呼叫一次
+    //  opt.registryConfig({ main, mirrors })與opt.onMirrorResult亦為正式路徑使用(publishPackage傳入, 帳本R27): 主倉庫經環境變數套用於每個exec並供最終閘門查詢, 鏡像於主發布列成功後逐一發布
     //  opt.onRemoteRevoke同為正式路徑使用(publishPackage傳入, 帳本R26.2): 第一個遠端列為git列且第一次嘗試即spawn失敗(git根本沒執行)時, 於throw前呼叫一次, 撤回『已交出遠端列』旗標
     //測試環境下未注入 exec 即 throw, 於 loadScript、rm -r 等任何副作用之前(帳本 R25); 預設 checkNpm(網路)與 gitStatusDist(git)於被使用時才擋
     requireInjected('runScript', opt, ['exec'])
@@ -787,6 +848,16 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
     }
     let nowMs = _.isFunction(_.get(opt, 'nowMs')) ? opt.nowMs : Date.now
     let checkRelease = _.get(opt, 'checkRelease', true) !== false
+
+    //倉庫設定(帳本R27, publishPackage傳入, 正式路徑使用): registryConfig.main為主倉庫, 每個exec都帶registry使該列內所有npm子行程以主倉庫為準(npm_config_registry), 並供最終閘門查主倉庫;
+    //registryConfig.mirrors為同時發布之鏡像, 主倉庫之npm publish成功後逐一發布(鏡像失敗只警告, onMirrorResult收集結果); 未給registryConfig(僅測試)則不設環境變數、不發鏡像, 最終閘門由checkNpm自行要求registry
+    let regMain = ''
+    let regMirrors = []
+    if (_.get(opt, 'registryConfig.main')) {
+        regMain = normalizeRegistryUrl(opt.registryConfig.main)
+        regMirrors = _.map(_.get(opt, 'registryConfig.mirrors', []), (x) => normalizeRegistryUrl(x))
+    }
+    let execOpt = (o) => (regMain !== '' ? { ...o, registry: regMain } : o)
 
     //執行前檢查全部列: 有非預期指令或缺必要列即於第一列之前中止, 不在addVersion等改動之後才中止
     let lines = loadScript(pdi, msg, { checkRelease })
@@ -861,7 +932,7 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
         let useNode = ln.kind === 'node'
         if (useNode) {
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await exec(pdi, v, { main: 'node' }) //main='node'使node指令失敗(離開碼非0、程序無法啟動、輸出含[RollupError]、離開碼0但輸出含錯誤堆疊或固定建置失敗字串)於ectScripts內立即throw
+            let msg = await exec(pdi, v, execOpt({ main: 'node' })) //main='node'使node指令失敗(離開碼非0、程序無法啟動、輸出含[RollupError]、離開碼0但輸出含錯誤堆疊或固定建置失敗字串)於ectScripts內立即throw
             // .catch((err) => {
             //     console.log('useNode', err)
 
@@ -895,7 +966,7 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
         let useBin = ln.kind === 'bin'
         if (useBin) {
             console.log(`${pdi.name} >>> exec: `, v)
-            let msg = await exec(pdi, v) //不判定成敗(逾時除外, R18): jsdoc有ERROR時exit 1但文件照常產出; 有拒絕值時ectScripts只留痕一行(未判定(...))
+            let msg = await (regMain !== '' ? exec(pdi, v, execOpt({})) : exec(pdi, v)) //不判定成敗(逾時除外, R18): jsdoc有ERROR時exit 1但文件照常產出; 有拒絕值時ectScripts只留痕一行(未判定(...))
             // .catch((err) => {
             //     console.log('useBin', err)
 
@@ -958,7 +1029,7 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
             try {
                 msg = await runWithRetry(() => {
                     nTry++
-                    return exec(pdi, v, { main: 'git' }) //main='git'使ectScripts依子命令判定(R6.2): spawn與離開碼>=128一律throw; push及未列入白名單之子命令任何非0throw; commit僅含nothing to commit之exit 1良性(D1); add與唯讀子命令其餘良性, 只留痕一行(未判定(...), R13)
+                    return exec(pdi, v, execOpt({ main: 'git' })) //main='git'使ectScripts依子命令判定(R6.2): spawn與離開碼>=128一律throw; push及未列入白名單之子命令任何非0throw; commit僅含nothing to commit之exit 1良性(D1); add與唯讀子命令其餘良性, 只留痕一行(未判定(...), R13)
                 }, {
                     ...getRetryPolicy(v), //git push 失敗重試2次、間隔30秒(R26.1), 其他 git 列不重試
                     ...(_.isFinite(_.get(opt, 'retryDelayMs')) ? { delayMs: opt.retryDelayMs } : {}), //opt.retryDelayMs僅供測試縮短間隔
@@ -1014,7 +1085,7 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
             console.log(`${pdi.name} >>> exec: `, v)
             notifyRemote(v) //第一個遠端列(npm run deploy、npm publish)交出前通知(R21.3)
             let msg = await runWithRetry(() => {
-                return exec(pdi, v, { main: 'npm' }) //main='npm'使npm指令失敗(輸出含npm error, 或離開碼非0、程序無法啟動、逾時)於ectScripts內立即throw
+                return exec(pdi, v, execOpt({ main: 'npm' })) //main='npm'使npm指令失敗(輸出含npm error, 或離開碼非0、程序無法啟動、逾時)於ectScripts內立即throw
             }, {
                 ...getRetryPolicy(v), //npm run deploy(後可接參數)失敗重試2次、間隔30秒, 其他不重試
                 ...(_.isFinite(_.get(opt, 'retryDelayMs')) ? { delayMs: opt.retryDelayMs } : {}), //opt.retryDelayMs僅供測試縮短間隔(R9)
@@ -1042,6 +1113,20 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
             //     // throw new Error(err)
             // })
             console.log('useNpm:::', msg)
+
+            //同時發布(帳本R27.4): 主倉庫之npm publish成功後(失敗已於上方throw)才對每個鏡像發布; 鏡像列緊接於主發布列之後、屬同一個對外列的延伸, 每個鏡像發布前仍重過對外列閘門(版本與建置主檔, 失敗記為該鏡像未同步而不發布);
+            //鏡像失敗不throw(不使套件失敗、不中止連動), 由onMirrorResult收集並於結束摘要列出; 主發布列已通知過遠端(notifyRemote), 鏡像不改變還原邊界(R21)
+            if (isPublishCmd(v) && _.size(regMirrors) > 0) {
+                let vPub = readVersion(pdi.path) //主倉庫剛發布之版本; 版本閘門(R20.2)只在首個對外列前查一次, 鏡像之間改以此值重驗(npm lifecycle 可能改動 package.json)
+                let gateMirror = () => {
+                    gateOutward()
+                    let vNow = readVersion(pdi.path)
+                    if (vNow !== vPub) {
+                        throw new Error(`[${pdi.name}] 版本於鏡像發布期間改變(主倉庫發布[${vPub}]、現在[${vNow}]), 鏡像不發布`)
+                    }
+                }
+                await publishToMirrors({ pdi, version: vPub, v, mirrors: regMirrors, exec, gate: gateMirror, onResult: _.get(opt, 'onMirrorResult') })
+            }
             // let cerr
             // cerr = 'You cannot publish over the previously published versions'
             // if (msg.indexOf(cerr) >= 0) {
@@ -1079,15 +1164,15 @@ async function runScript(pdi, msg = 'update pks', opt = {}) {
         gateMain()
     }
 
-    //偵測npm, 確認套件已能取得與安裝
+    //偵測主倉庫, 確認套件已能取得與安裝
     if (true) {
 
         let versionNew = readVersion(pdi.path)
 
-        let b = await checkNpm(pdi.name, versionNew)
+        let b = regMain !== '' ? await checkNpm(pdi.name, versionNew, { registry: regMain }) : await checkNpm(pdi.name, versionNew) //查主倉庫(帳本R27.3); 鏡像不列入等待條件
 
         if (!b) {
-            throw new Error(`npm上找不到[${pdi.name}@${versionNew}]`) //須用versionNew(addVersion已bump), pdi.version為掃描時舊版號會誤導
+            throw new Error(`npm上找不到[${pdi.name}@${versionNew}]`) //(字樣為守望器致命字樣, 不變; 實際查的是主倉庫)須用versionNew(addVersion已bump), pdi.version為掃描時舊版號會誤導
         }
 
     }
@@ -1101,6 +1186,8 @@ export {
     RM_DELAY_MS,
     RM_RETRY_CODES,
     isSafeRmTarget,
+    hasNpmRegistryOverride,
+    getPublishTargetIssue,
     hasShellControl,
     isReadonlyGitCmd,
     isLocalGitCmd,

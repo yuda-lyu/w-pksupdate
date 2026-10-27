@@ -220,7 +220,7 @@ describe('testGuard 判別與守衛語意(R25.1、R25.2)', function() {
                 let logOri = console.log
                 console.log = () => {}
                 try {
-                    await assert.rejects(publishPackage(['sbx-hl'], { deps, checkRelease: false }), new RegExp(`\\[publishPackage\\]: 檔案\\[.*${which.replace('.', '\\.')}\\]為硬連結`), which)
+                    await assert.rejects(publishPackage(['sbx-hl'], { deps, checkRelease: false, registryConfig: { main: 'http://localhost:48731/', mirrors: [] } }), new RegExp(`\\[publishPackage\\]: 檔案\\[.*${which.replace('.', '\\.')}\\]為硬連結`), which)
                 }
                 finally {
                     console.log = logOri
@@ -371,7 +371,7 @@ describe('全域 root hook: 旗標與 PATH 安全網(R25.6)', function() {
 //stubs: 該站點「之下一層」換成 spy 的 src 檔名; execSpy: 另換 wsemi execProcess; ctl: 對照組(正式模式)應見到之 spy 紀錄(子字串)
 let SITES = [
     { site: 'publishPackages', stubs: ['checkGit.mjs', 'publishPackage.mjs'], ctl: ['checkGit', 'publishPackage'] },
-    { site: 'publishPackage', stubs: ['getFolders.mjs', 'parseProject.mjs', 'getUpdate.mjs', 'updatePackage.mjs', 'ectScripts.mjs', 'checkNpmVersion.mjs'], ctl: ['getFolders', 'updatePackage', 'ectScripts|npm i --registry=https://registry.npmjs.org/|npm'] },
+    { site: 'publishPackage', stubs: ['getFolders.mjs', 'parseProject.mjs', 'getUpdate.mjs', 'updatePackage.mjs', 'ectScripts.mjs', 'checkNpmVersion.mjs'], ctl: ['getFolders', 'updatePackage', 'ectScripts|npm i --registry=http://localhost:48731/|npm'] },
     { site: 'runScript', stubs: ['ectScripts.mjs', 'checkNpmVersion.mjs'], ctl: ['ectScripts|node toolg/mark.mjs A|node'] },
     { site: 'runScript.checkNpm', stubs: ['ectScripts.mjs', 'checkNpmVersion.mjs'], ctl: ['checkNpmVersion|sbx-ect-test@'] }, //exec 已注入、checkNpm 未注入: 預設 checkNpm(網路)被使用時才擋
     //exec 已注入(spy 記錄)、gitStatusDist 未注入: dist 閘門使用預設 git status 時擋, 擋下時 exec 從未被呼叫; 此站點之守衛曾被 dist 閘門的『其他例外跳過檢查』catch 吞掉(須 isTestGuardError 重拋)
@@ -391,7 +391,9 @@ let SITES = [
     { site: 'exitAfterFlush', guardSite: 'exitAfterFlush', stubs: [], ctl: ['exit|0'] },
     { site: 'checkGit', stubs: ['ectScripts.mjs'], ctl: ['ectScripts|git --version|git'] },
     //網路接縫: 以不通之代理使 fetch 不離機; 對照組以子程序印出之行證明確實走到 fetch 核心(checking metadata / 檢測例外), 擋下時這些行不得出現(外審 sol 變異 M09)
-    { site: 'checkNpmVersion', stubs: [], ctl: ['fetch|https://registry.npmjs.org/sbx-guard-pkg/0.0.1'], ctlLog: /checking metadata|檢測例外\(視為尚未就緒\)/ },
+    { site: 'checkNpmVersion', stubs: [], ctl: ['fetch|http://localhost:48731/sbx-guard-pkg/0.0.1'], ctlLog: /checking metadata|檢測例外\(視為尚未就緒\)/ },
+    //倉庫設定解析之 npm 子行程接縫(帳本 R27、R25): child_process.execSync 換成只記錄的 spy(不起任何行程); 擋下時 spy 不得被呼叫, 對照組(正式模式)須呼叫到 `npm config get registry`
+    { site: 'registryConfig.npmConfig', stubs: [], ctl: ['execSync|npm config get registry'] },
     //無法換成下一層 spy 的兩個接縫: 子程序內把 fs 讀取類 / child_process.execSync 換成『記錄(再轉呼叫 / 不執行)』的包裝來觀測(外審 opus F06: 原兩站點對照組無正面證據, 守衛移到掃描/執行之後仍綠)
     { site: 'getFolders', stubs: [], ctl: ['fs|'] },
     { site: 'checkGitStatus', stubs: [], ctl: ['execSync|git status --short'] },
@@ -399,10 +401,11 @@ let SITES = [
 
 //逐鍵驗證守衛的鍵清單(R25.2; 外審 sol 變異 M02 存活): 其他鍵都給記錄用 spy、只缺一個鍵; 測試環境下須列出該鍵缺漏而 throw, 且沒有任何 spy 被呼叫; 正式模式該鍵走(已被換成 spy 的)預設實作, 其紀錄證明確實用了預設
 let MISSING = [
-    { fn: 'publishPackages', keys: { checkGit: 'checkGit', publishPackage: 'publishPackage' }, stubs: ['checkGit.mjs', 'publishPackage.mjs'] },
+    //resolveRegistryConfig 的預設實作是真函式(非 spy): 對照組(W_PKSUPDATE_REGISTRY 已給, 不啟動 npm)以其印出之『[registry] 主倉庫:』行證明走了預設實作(值為 { log: 正則 })
+    { fn: 'publishPackages', keys: { checkGit: 'checkGit', publishPackage: 'publishPackage', resolveRegistryConfig: { log: /\[registry\] 主倉庫: http:\/\/localhost:48731\// } }, stubs: ['checkGit.mjs', 'publishPackage.mjs'] },
     {
         fn: 'publishPackage',
-        keys: { getFolders: 'getFolders', parseProject: 'parseProject', getUpdate: 'getUpdate', updatePackage: 'updatePackage', ectScripts: 'ectScripts|npm i --registry=https://registry.npmjs.org/|npm', runScript: 'ectScripts|node toolg/mark.mjs A|node' },
+        keys: { getFolders: 'getFolders', parseProject: 'parseProject', getUpdate: 'getUpdate', updatePackage: 'updatePackage', ectScripts: 'ectScripts|npm i --registry=http://localhost:48731/|npm', runScript: 'ectScripts|node toolg/mark.mjs A|node' },
         stubs: ['getFolders.mjs', 'parseProject.mjs', 'getUpdate.mjs', 'updatePackage.mjs', 'ectScripts.mjs', 'checkNpmVersion.mjs'],
     },
     { fn: 'runScript', keys: { exec: 'ectScripts|node toolg/mark.mjs A|node' }, stubs: ['ectScripts.mjs', 'checkNpmVersion.mjs'] },
@@ -410,7 +413,8 @@ let MISSING = [
 ]
 for (let m of MISSING) {
     for (let [key, ctl] of Object.entries(m.keys)) {
-        SITES.push({ site: `missing:${m.fn}:${key}`, guardSite: m.fn, missingKey: key, stubs: m.stubs, ctl: [ctl] })
+        let isLog = ctl !== null && typeof ctl === 'object'
+        SITES.push({ site: `missing:${m.fn}:${key}`, guardSite: m.fn, missingKey: key, stubs: m.stubs, ctl: isLog ? [] : [ctl], ...(isLog ? { ctlLog: ctl.log } : {}) })
     }
 }
 
@@ -436,6 +440,7 @@ let spawnSite = (c, flagged) => {
         HTTP_PROXY: 'http://127.0.0.1:9',
         HTTPS_PROXY: 'http://127.0.0.1:9',
         NO_PROXY: '',
+        W_PKSUPDATE_REGISTRY: 'http://localhost:48731/', //倉庫設定(帳本 R27): 對照組(正式模式)的 resolveRegistryConfig 取此值而不啟動 npm config get registry; 虛構之本機位址
         GIT_DIR: path.join(fdTmp, 'no-such-git-dir'), //雙保險: 若有 git 被啟動, 只會 fatal 而不碰任何倉庫
         OUTSIDE_PKG: path.resolve('./no-such-guard-pkg'), //不在 test/_tmp 內、也不存在之套件路徑(runScript.path / publishPackage.path 案)
     })
@@ -507,12 +512,12 @@ describe('各站點: 測試環境下未注入即呼叫 → throw 且未 spawn(R2
 
     }
 
-    it('站點矩陣涵蓋帳本 R25.3 站點表之全部入口與接縫(8 個站點、含 runScript 兩個預設實作的延遲守衛、兩個套件路徑守衛共 12 列; 另逐鍵缺漏 10 列: publishPackages 2、publishPackage 6、runScript 1、checkGit 1)', function() {
-        assert.deepStrictEqual(SITES.filter((c) => !c.missingKey).map((c) => c.site).sort(), ['checkGit', 'checkGitStatus', 'checkNpmVersion', 'ectScripts', 'ectScripts.nonFnExec', 'ectScripts.realIdentity', 'ectScripts.undefExec', 'exitAfterFlush', 'getFolders', 'publishPackage', 'publishPackage.path', 'publishPackages', 'removeTarget.path', 'runScript', 'runScript.checkNpm', 'runScript.gitStatusDist', 'runScript.path', 'updatePackage.path'])
+    it('站點矩陣涵蓋帳本 R25.3 站點表之全部入口與接縫(含 R27 新增之 registryConfig.npmConfig; 另逐鍵缺漏 11 列: publishPackages 3、publishPackage 6、runScript 1、checkGit 1)', function() {
+        assert.deepStrictEqual(SITES.filter((c) => !c.missingKey).map((c) => c.site).sort(), ['checkGit', 'checkGitStatus', 'checkNpmVersion', 'ectScripts', 'ectScripts.nonFnExec', 'ectScripts.realIdentity', 'ectScripts.undefExec', 'exitAfterFlush', 'getFolders', 'publishPackage', 'publishPackage.path', 'publishPackages', 'registryConfig.npmConfig', 'removeTarget.path', 'runScript', 'runScript.checkNpm', 'runScript.gitStatusDist', 'runScript.path', 'updatePackage.path'])
         assert.deepStrictEqual(SITES.filter((c) => c.missingKey).map((c) => c.site).sort(), [
             'missing:checkGit:exec',
             'missing:publishPackage:ectScripts', 'missing:publishPackage:getFolders', 'missing:publishPackage:getUpdate', 'missing:publishPackage:parseProject', 'missing:publishPackage:runScript', 'missing:publishPackage:updatePackage',
-            'missing:publishPackages:checkGit', 'missing:publishPackages:publishPackage',
+            'missing:publishPackages:checkGit', 'missing:publishPackages:publishPackage', 'missing:publishPackages:resolveRegistryConfig',
             'missing:runScript:exec',
         ])
     })
@@ -548,7 +553,7 @@ describe('realExec 刻意真實執行 helper 之拒絕(R25.5; 注入 spy 底層,
     //第 5 次外審 opus F02: 原為黑名單正則(引號、帶值選項、縮寫、絕對路徑 git.exe、alias、npx、呼叫運算子…等等價寫法皆通過), 改為白名單並與正式路徑共用 parseNpmCmd/getGitSubcommand
     it('npm 白名單: 只放行 run <fixture 腳本名>; publish、deploy、安裝、版本、帳號權限, 以及所有等價寫法(引號、帶值選項、縮寫、別名、npx、npm-cli.js、呼叫運算子、.cmd、陣列夾帶)一律拒絕, 底層 ectScripts 從未被呼叫', async function() {
         let cmds = [
-            'npm publish', 'npm publish --tag next', 'npm run deploy', 'npm run deploy -- --message x', 'npm run-script deploy', 'npm i', 'npm i --registry=https://registry.npmjs.org/', 'npm install x', 'npm ci', 'npm version patch', 'npm --silent publish', 'npm dist-tag add a@1 latest', 'npm unpublish a@1', 'npm login',
+            'npm publish', 'npm publish --tag next', 'npm run deploy', 'npm run deploy -- --message x', 'npm run-script deploy', 'npm i', 'npm i --registry=http://localhost:48731/', 'npm install x', 'npm ci', 'npm version patch', 'npm --silent publish', 'npm dist-tag add a@1 latest', 'npm unpublish a@1', 'npm login',
             //外審 opus 實測放行者
             'npm "publish"', 'npm \'publish\'', 'npm --loglevel warn publish', 'npm pu', 'npm publ', 'npm rum deploy', 'npm urn deploy', 'npm run "deploy"', 'npm --prefix x run deploy', 'npx -y npm@11 publish', '& \'npm\' publish', 'node node_modules/npm/bin/npm-cli.js publish', 'node ./node_modules/npm/bin/npx-cli.js publish', 'npm ins', 'npm isntall', 'npm cit', 'npm it',
             'npm rum build-ok', 'npm ru build-ok', 'npm runx build-ok', 'npm rn build-ok', 'npm test', 'npm start', 'npm exec x', 'npm x build-ok',
@@ -755,11 +760,12 @@ describe('盤點: 真實執行接縫與守衛(R25.4; 新增接縫而未登錄即
     //exports 釘死的理由(外審 sol 變異 M07): 已登錄的接縫檔內新增一個未守衛的匯出函式(同檔內新接縫)時, 檔案層級的登錄不會變紅; 匯出清單一變即紅, 迫使逐一審查該匯出是否為接縫
     let TABLE = {
         'src/ectScripts.mjs': { guards: ['assertRealExecAllowed(\'ectScripts\'', 'opt.execProcess === execProcess'], exports: ['DEFAULT_TIMEOUT_MS', 'GIT_FATAL_EXIT_CODE', 'GIT_LENIENT_SUBS', 'PRINTED_FAIL_STRINGS', 'RE_GIT_NO_CHANGE', 'TIMEOUT_GRACE_MS', 'composeCommand', 'createOutputCollector', 'default', 'detectPrintedFailure', 'getExecDetail', 'getGitSubcommand', 'getTimeoutGraceMs', 'getTimeoutMs', 'getUnjudgedMessage', 'isTimeoutMessage', 'judgeResult'] },
-        'src/runScript.mjs': { guards: ['requireInjected(\'runScript\'', 'assertConfinedToTestTmp(\'runScript\'', 'assertRealExecAllowed(\'runScript.checkNpm\'', 'assertRealExecAllowed(\'runScript.gitStatusDist\'', 'assertConfinedToTestTmp(\'removeTarget\''], exports: ['RM_DELAY_MS', 'RM_RETRIES', 'RM_RETRY_CODES', 'checkMainFiles', 'classifyLine', 'default', 'getRetryMessage', 'getRetryPolicy', 'hasShellControl', 'isAddVersionCmd', 'isDeployCmd', 'isLocalGitCmd', 'isNetworkPushError', 'isOutwardCmd', 'isPublishCmd', 'isPushCmd', 'isReadonlyGitCmd', 'isRemoteCmd', 'isSafeRmTarget', 'judgeDistStatus', 'loadScript', 'parseNpmCmd', 'parseScript', 'removeTarget', 'runWithRetry'] },
+        'src/runScript.mjs': { guards: ['requireInjected(\'runScript\'', 'assertConfinedToTestTmp(\'runScript\'', 'assertRealExecAllowed(\'runScript.checkNpm\'', 'assertRealExecAllowed(\'runScript.gitStatusDist\'', 'assertConfinedToTestTmp(\'removeTarget\''], exports: ['RM_DELAY_MS', 'RM_RETRIES', 'RM_RETRY_CODES', 'checkMainFiles', 'classifyLine', 'default', 'getPublishTargetIssue', 'getRetryMessage', 'getRetryPolicy', 'hasNpmRegistryOverride', 'hasShellControl', 'isAddVersionCmd', 'isDeployCmd', 'isLocalGitCmd', 'isNetworkPushError', 'isOutwardCmd', 'isPublishCmd', 'isPushCmd', 'isReadonlyGitCmd', 'isRemoteCmd', 'isSafeRmTarget', 'judgeDistStatus', 'loadScript', 'parseNpmCmd', 'parseScript', 'removeTarget', 'runWithRetry'] },
         'src/publishPackage.mjs': { guards: ['requireInjected(\'publishPackage\'', 'assertConfinedToTestTmp(\'publishPackage\'', 'assertSingleLink(\'publishPackage\''], exports: ['default'] },
         'src/publishPackages.mjs': { guards: ['requireInjected(\'publishPackages\''], exports: ['default'] },
         'src/checkGit.mjs': { guards: ['requireInjected(\'checkGit\''], exports: ['default'] },
-        'src/checkNpmVersion.mjs': { guards: ['requireInjected(\'checkNpmVersion\''], exports: ['MAX_WAIT_MS', 'REQUEST_TIMEOUT_MS', 'default'] },
+        'src/registryConfig.mjs': { guards: ['assertRealExecAllowed(\'registryConfig.npmConfig\''], exports: ['ENV_MIRRORS', 'ENV_REGISTRY', 'formatRegistryConfig', 'getNpmConfigRegistry', 'normalizeRegistryUrl', 'parseMirrorList', 'resolveRegistryConfig'] },
+        'src/checkNpmVersion.mjs': { guards: ['requireInjected(\'checkNpmVersion\''], exports: ['AUTH_FAIL_MAX', 'MAX_WAIT_MS', 'REQUEST_TIMEOUT_MS', 'default'] },
         'src/getFolders.mjs': { guards: ['assertRealExecAllowed(\'getFolders\''], exports: ['default'] },
         'src/checkGitStatus.mjs': { guards: ['assertRealExecAllowed(\'checkGitStatus\''], exports: ['default'] },
         'src/updatePackage.mjs': { guards: ['assertConfinedToTestTmp(\'updatePackage\'', 'assertSingleLink(\'updatePackage\''], exports: ['default'] },

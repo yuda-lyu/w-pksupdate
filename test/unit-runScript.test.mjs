@@ -180,7 +180,7 @@ describe('runScript getRetryPolicy(R06 只有 npm run deploy 重試)', function(
         assert.deepStrictEqual(getRetryPolicy('npm run deploy'), { times: 2, delayMs: 30000 })
     })
 
-    for (let v of ['npm publish', 'npm run build', 'npm i --registry=https://registry.npmjs.org/', 'npm run deploy2', 'node toolg/gDistRollup.mjs', './node_modules/.bin/jsdoc -c .jsdoc', 'git add .  -A', `git commit -m 'modify: update pks'`, 'git status', 'git pull', 'git fetch origin', 'git pusj origin master:master', 'git --version']) {
+    for (let v of ['npm publish', 'npm run build', 'npm i --registry=http://localhost:48731/', 'npm run deploy2', 'node toolg/gDistRollup.mjs', './node_modules/.bin/jsdoc -c .jsdoc', 'git add .  -A', `git commit -m 'modify: update pks'`, 'git status', 'git pull', 'git fetch origin', 'git pusj origin master:master', 'git --version']) {
         it(`'${v}' → 不重試`, function() {
             assert.deepStrictEqual(getRetryPolicy(v), { times: 0, delayMs: 0 })
         })

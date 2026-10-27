@@ -7,6 +7,8 @@
 let site = process.argv[2]
 let fdPkg = process.env.FIXTURE_PKG
 let pdi = { name: process.env.FIXTURE_NAME, path: fdPkg }
+//倉庫設定(帳本 R27; 虛構之本機位址): publishPackage 須由呼叫端給 registryConfig, 父行程亦以 W_PKSUPDATE_REGISTRY 給同值使對照組之 resolveRegistryConfig 不啟動 npm
+let REG = { main: 'http://localhost:48731/', mirrors: [] }
 
 //掛鉤握手(第 5 次外審 sol F06/M13、opus F06): 回報『被換成 spy 的模組』實際解析到哪個檔案——正反兩組都斷言有解析到 stubs/guard, 否則帶旗標的負例即使 spy 沒接上也會因守衛在前而通過(拿掉守衛的變異就不安全)
 let hookResolved = {}
@@ -36,7 +38,7 @@ try {
             return ret
         }
         if (fn === 'publishPackages') {
-            let deps = { checkGit: async_('checkGit', 'git version spy\n'), publishPackage: async_('publishPackage', false) }
+            let deps = { checkGit: async_('checkGit', 'git version spy\n'), publishPackage: async_('publishPackage', false), resolveRegistryConfig: rec('resolveRegistryConfig', { ...REG, source: 'spy', notes: [] }) }
             delete deps[key]
             let { default: f } = await import('../../src/publishPackages.mjs')
             await f([pdi.name], { deps })
@@ -52,7 +54,7 @@ try {
             }
             delete deps[key]
             let { default: f } = await import('../../src/publishPackage.mjs')
-            await f([pdi.name], { checkRelease: false, deps })
+            await f([pdi.name], { checkRelease: false, registryConfig: REG, deps })
         }
         else if (fn === 'runScript') {
             let opt = { checkRelease: false, exec: async_('exec', '') }
@@ -76,7 +78,7 @@ try {
     }
     else if (site === 'publishPackage') {
         let { default: f } = await import('../../src/publishPackage.mjs')
-        await f([pdi.name], { checkRelease: false }) //checkRelease 不是注入的接縫, 只使夾具不必備齊發布列
+        await f([pdi.name], { checkRelease: false, registryConfig: REG }) //checkRelease 不是注入的接縫, 只使夾具不必備齊發布列; registryConfig 為必給之設定(R27), 非注入的接縫
     }
     else if (site === 'runScript') {
         let { default: f } = await import('../../src/runScript.mjs')
@@ -111,6 +113,7 @@ try {
         }
         await f([pdi.name], {
             checkRelease: false,
+            registryConfig: REG,
             deps: {
                 getFolders: rec('getFolders', [outside]),
                 parseProject: rec('parseProject', [{ name: pdi.name, path: outside, level: '3' }]),
@@ -171,7 +174,21 @@ try {
             throw new Error('fetch spy')
         }
         let { default: f } = await import('../../src/checkNpmVersion.mjs')
-        await f('sbx-guard-pkg', '0.0.1', { maxTry: 0, delayMs: 1, requestTimeoutMs: 3000 })
+        await f('sbx-guard-pkg', '0.0.1', { registry: REG.main, maxTry: 0, delayMs: 1, requestTimeoutMs: 3000 })
+    }
+    else if (site === 'registryConfig.npmConfig') {
+        //觀測用: child_process.execSync 換成只記錄的 spy(先於 registryConfig 載入並同步內建模組的 ESM 具名匯出); 未給主倉庫(選項、環境變數皆空)時 resolveRegistryConfig 走預設的 npm config get registry,
+        //擋下時守衛在 execSync 之前, spy 不得被呼叫; 對照組(正式模式)須呼叫到 `npm config get registry`
+        let { default: record } = await import('./stubs/record.mjs')
+        let cpMod = (await import('node:child_process')).default
+        let { syncBuiltinESMExports } = await import('node:module')
+        cpMod.execSync = (cmd) => {
+            record(`execSync|${cmd}`)
+            return `${REG.main}\n`
+        }
+        syncBuiltinESMExports()
+        let { resolveRegistryConfig } = await import('../../src/registryConfig.mjs')
+        resolveRegistryConfig({ env: {} })
     }
     else if (site === 'getFolders') {
         //觀測用: 呼叫期間把 fs 的讀取類函式換成『先記錄再轉呼叫』的包裝; 擋下時守衛在掃描之前, 不得有任何記錄, 對照組(正式模式)須記錄到(外審 opus F06 MUT3c)

@@ -5,6 +5,7 @@ import execProcess from 'wsemi/src/execProcess.mjs'
 import { neutralizeFatal } from './fatalWords.mjs'
 import { assertRealExecAllowed } from './testGuard.mjs'
 import { GIT_LENIENT_SUBS, getGitSubcommand } from './gitSubcommand.mjs'
+import { normalizeRegistryUrl } from './registryConfig.mjs'
 
 
 /**
@@ -53,7 +54,9 @@ const PRINTED_FAIL_STRINGS = [
 //錯誤堆疊框行(帳本 R15.1): '    at fn (位置:行:欄)'、'    at async 位置:行:欄'; 位置須像路徑或網址(scheme://、node:、磁碟機代號、/、./、../、\\\\ UNC、<anonymous>),
 //故 '    at the end of the build 12:30:45' 之類時間戳行不算. 函式名部分允許至多三層巢狀括號(eval 框: 'at eval (eval at <anonymous> (file:///…:1:32), <anonymous>:1:7)');
 //'[^()]*' 使函式名部分不與後面的 '.*' 重疊, '{0,3}' 使病態長行(大量 ' (')不致平方級退化.
-const RE_STACK_FRAME = /^[ \t]+at[ \t]+(?:async[ \t]+)?(?:[^()]*\(){0,3}(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|node:|[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|\\\\|<anonymous>).*:\d+:\d+\)?[ \t]*$/
+//行尾容許屬性區塊起首 ' {'(2026-10-28, 建議w-pksupdate修正): Error 帶自有可列舉屬性(code、errno、syscall…)時 util.inspect(console.log(err))把屬性區塊接在最後一個堆疊框行尾('    at f (位置:行:欄) {' 後接 '  code: …'、'}'),
+//堆疊只有一框時(async 函數第一次 await 之後出錯且呼叫端未 await)該框行尾即帶 ' {', 原正規式不匹配而漏判; '{' 之後不得再有其他字元.
+const RE_STACK_FRAME = /^[ \t]+at[ \t]+(?:async[ \t]+)?(?:[^()]*\(){0,3}(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|node:|[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|\\\\|<anonymous>).*:\d+:\d+\)?(?:[ \t]*\{)?[ \t]*$/
 
 //診斷輸出之標頭行(帳本 R15.5): console.trace()('Trace: 訊息'或單獨一行 'Trace')與 Node 行程警告('(node:<pid>) …', --trace-warnings、--trace-deprecation 下其後附堆疊);
 //緊接在此類標頭之後的堆疊框屬診斷而非失敗. 'Error: …' 標頭(被印出之 Error 物件)不在此列.
@@ -84,11 +87,16 @@ const NOTE_NOT_SETTLED = '逾時後仍未落定, 子程序樹可能未清除'
  * 原生程式寫入 stderr 不會因 Stop 而中止(呼叫端未在 PowerShell 內重導 stderr, 不會被包成 ErrorRecord).
  * 切換目錄用 Set-Location -LiteralPath(不做萬用字元解讀), 路徑置於單引號內(不做變數展開), 單引號本身以兩個單引號跳脫.
  *
+ * 給了 opt.registry(主倉庫位址, 帳本 R27.2)時, 於切換目錄之後設 $env:npm_config_registry: 該整行內所有 npm 子行程(npm i、npm publish、npm run …、建置腳本內再呼叫之 npm)皆以主倉庫為準,
+ * 優先於使用者與專案層 .npmrc(npm 設定優先序: 命令列旗標 > 環境變數 > 專案 .npmrc > 使用者 .npmrc); 環境變數僅作用於該 PowerShell 行程, 不污染呼叫端.
+ *
  * @param {String} pathPkg 輸入套件資料夾路徑字串
  * @param {String|Array} scps 輸入指令字串或指令陣列, 陣列依序以' ; '串接; 多指令時離開碼只反映最末一個
+ * @param {Object} [opt={}] 輸入設定物件
+ * @param {String} [opt.registry] 輸入主倉庫位址(會經 normalizeRegistryUrl 正規化與驗證); 未給不設環境變數
  * @returns {String} 回傳整行指令字串
  */
-function composeCommand(pathPkg, scps) {
+function composeCommand(pathPkg, scps, opt = {}) {
 
     if (!w.isarr(scps)) {
         scps = [scps]
@@ -96,9 +104,16 @@ function composeCommand(pathPkg, scps) {
 
     let pathLiteral = String(pathPkg).replace(/'/g, `''`)
 
+    let envs = []
+    if (_.get(opt, 'registry')) {
+        let reg = normalizeRegistryUrl(opt.registry) //僅含英數與 . _ ~ : / % + , - , 置於單引號內不需跳脫
+        envs.push(`$env:npm_config_registry = '${reg}'`)
+    }
+
     let args = [
         `$ErrorActionPreference = 'Stop'`,
         `Set-Location -LiteralPath '${pathLiteral}'`,
+        ...envs,
         // `pwd`, //顯示當前工作路徑會延遲顯示, 故會出現於最末
         ...scps,
         `if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }`,
@@ -420,6 +435,7 @@ function isTimeoutMessage(msg) {
  * @param {String|Array} scps 輸入指令字串或指令陣列
  * @param {Object} [opt={}] 輸入設定物件
  * @param {String} [opt.main] 輸入主要指令類型字串, 'node'、'npm'時判定成敗, 'git'時依子命令判定(帳本 R6.2: spawn 與離開碼 >= 128 一律失敗; push/未列入白名單之子命令任何非 0 失敗; commit 僅含無變更片語之 exit 1 良性; add 與唯讀子命令其餘良性), 其他不判定(逾時除外, 見 judgeResult)
+ * @param {String} [opt.registry] 輸入主倉庫位址(帳本 R27.2), 給了即於該行以 $env:npm_config_registry 設定, 使其內所有 npm 子行程以主倉庫為準, 見 composeCommand; 未給不設
  * @param {Number|null} [opt.timeoutMs=DEFAULT_TIMEOUT_MS] 輸入逾時毫秒數(帳本 R18), 未給用預設 60 分鐘, 給 null 或 0 表不限制, 非正數之其他值視為未給
  * @param {Number} [opt.timeoutGraceMs=TIMEOUT_GRACE_MS] 輸入逾時後等 execProcess 落定之寬限毫秒數(帳本 R18.6), 逾時仍未落定即判逾時失敗並不再等待; 供測試縮短
  * @param {Function} [opt.execProcess] 輸入取代 wsemi execProcess 之函式(供測試注入, 簽名同 execProcess(prog, args, opt)); 測試環境下必須給, 未給即 throw(帳本 R25)
@@ -449,7 +465,7 @@ async function ectScripts(pdi, scps, opt = {}) {
     }
 
     let prog = 'powershell'
-    let args = composeCommand(pdi.path, scps)
+    let args = composeCommand(pdi.path, scps, { registry: _.get(opt, 'registry') })
 
     let col = createOutputCollector()
     let cbStdout = (cdata) => {

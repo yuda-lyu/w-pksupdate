@@ -99,6 +99,13 @@ process.stdout.write('x'.repeat(n) + 'Error [RollupError]: split-test marker\\n'
 trace()
 console.log('mark ' + process.argv.slice(2).join(' '))
 `,
+    //帳本 R27.2: 回報該列子行程看到的 npm_config_registry(由 ectScripts 之 registry 選項經 $env: 設定), 與子行程內再呼叫的 npm 實際採用之 registry(npm config get registry; 驗證環境變數優先於專案 .npmrc)
+    'toolg/printRegistry.mjs': `console.log('REG=' + (process.env.npm_config_registry || '(unset)'))
+`,
+    'toolg/npmRegistry.mjs': `import cp from 'child_process'
+let out = cp.execSync('npm config get registry', { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
+console.log('NPMREG=' + out.trim().split(/\\r?\\n/).pop())
+`,
     //名稱同真實之 addVersion, 只記錄被執行(驗證非預期指令於其之前中止)
     'toolg/addVersion.mjs': `import trace from './_trace.mjs'
 trace()

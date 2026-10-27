@@ -343,6 +343,58 @@ describe('ectScripts 整合 R15 自接 catch 與 R18 逾時(真 PowerShell 子�
         }
     })
 
+    //帳本 R27.2: 主倉庫以 $env:npm_config_registry 套用於整行(真 PowerShell); 子行程內的 npm 以它為準, 優先於專案 .npmrc(npm 設定優先序: 命令列旗標 > 環境變數 > 專案 .npmrc > 使用者 .npmrc)
+    //經 npm test 執行時 npm 會把自己的設定匯出成 npm_config_* 環境變數(含 npm_config_registry)給子行程, 繼承後無法區分「未設定」且會壓過專案 .npmrc;
+    //故測試期間暫時移除該變數(含大小寫變體), 結束還原
+    let withoutNpmRegistryEnv = async (fn) => {
+        let saved = {}
+        for (let k of Object.keys(process.env)) {
+            if (k.toLowerCase() === 'npm_config_registry') {
+                saved[k] = process.env[k]
+                delete process.env[k]
+            }
+        }
+        try {
+            return await fn()
+        }
+        finally {
+            for (let [k, v] of Object.entries(saved)) {
+                process.env[k] = v
+            }
+        }
+    }
+
+    it('R27.2 registry 選項 → 該列內 node 子行程看到 npm_config_registry=主倉庫(已正規化); 不給則不被設定', async function() {
+        await withoutNpmRegistryEnv(async () => {
+            let c1 = await quiet(() => ectScripts(pdi2, 'node toolg/printRegistry.mjs', { main: 'node', registry: 'http://localhost:48731' }))
+            assert.ok(c1.indexOf('REG=http://localhost:48731/') >= 0, c1)
+            let c2 = await quiet(() => ectScripts(pdi2, 'node toolg/printRegistry.mjs', { main: 'node' }))
+            assert.ok(c2.indexOf('REG=(unset)') >= 0, c2)
+        })
+    })
+
+    it('R27.2 子行程內再呼叫的 npm 採用主倉庫, 即使專案層 .npmrc 指向別處(環境變數優先於 .npmrc; 對照: 不給 registry 時 npm 取 .npmrc 之值)', async function() {
+        let fpNpmrc = path.join(fdPkg2, '.npmrc')
+        fs.writeFileSync(fpNpmrc, 'registry=http://localhost:9/\n', 'utf8') //fixture 專用, 測完即刪(fdTmp2 整個移除)
+        try {
+            await withoutNpmRegistryEnv(async () => {
+                let c0 = await quiet(() => ectScripts(pdi2, 'node toolg/npmRegistry.mjs', { main: 'node' }))
+                assert.ok(c0.indexOf('NPMREG=http://localhost:9/') >= 0, `對照組應採專案 .npmrc: ${c0}`)
+                let c1 = await quiet(() => ectScripts(pdi2, 'node toolg/npmRegistry.mjs', { main: 'node', registry: 'http://localhost:48731/' }))
+                assert.ok(c1.indexOf('NPMREG=http://localhost:48731/') >= 0, `應採主倉庫: ${c1}`)
+            })
+        }
+        finally {
+            fs.rmSync(fpNpmrc, { force: true })
+        }
+    })
+
+    it('R27.2 registry 位址含 shell 特殊字元 → 於啟動 PowerShell 之前 throw(不執行任何列)', async function() {
+        await assert.rejects(quiet(() => ectScripts(pdi2, 'node toolg/mark.mjs REGBAD', { main: 'node', registry: "http://localhost/'; node toolg/mark.mjs INJECTED; '" })), /^Error: \[registry\] /)
+        let tr = readTrace(fdPkg2)
+        assert.ok(!tr.some((s) => s.indexOf('REGBAD') >= 0 || s.indexOf('INJECTED') >= 0), JSON.stringify(tr))
+    })
+
 })
 
 

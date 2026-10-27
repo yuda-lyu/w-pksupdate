@@ -5,12 +5,15 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import publishPackage from '../src/publishPackage.mjs'
+import publishPackageRaw from '../src/publishPackage.mjs'
 import updatePackage from '../src/updatePackage.mjs'
 import getUpdate from '../src/getUpdate.mjs'
 import { cleanTmpRoot } from './tools/mkFixturePkg.mjs'
 import { reFatal } from './tools/fatalWords.mjs'
 
+//帳本 R27: publishPackage 須由呼叫端給 registryConfig(不退回預設倉庫); 本檔以虛構之本機位址為預設, 個案可覆寫(倉庫專屬案見 unit-registry-flow)
+let REG = { main: 'http://localhost:48731/', mirrors: [] }
+let publishPackage = (names, opt = {}) => publishPackageRaw(names, { registryConfig: REG, ...opt })
 
 let fdTmp = path.resolve('./test/_tmp/unit-publishPackage')
 let fdPkg = path.join(fdTmp, 'pkg')
@@ -94,14 +97,14 @@ describe('publishPackage npm i 失敗還原(R21)', function() {
         let s = setup({
             npmI: async () => {
                 fs.writeFileSync(fpLock, '{"partial":"npm i 寫到一半"}', 'utf8') //模擬 npm i 已改動 lock
-                throw new Error('[sbx-pub] npm指令失敗(code[1]): npm i --registry=https://registry.npmjs.org/')
+                throw new Error('[sbx-pub] npm指令失敗(code[1]): npm i --registry=http://localhost:48731/')
             },
         })
         await assert.rejects(quiet(() => publishPackage(['sbx-pub'], { deps: s.deps, checkRelease: false })), /^Error: \[sbx-pub\] npm指令失敗\(code\[1\]\): npm i/)
         assert.ok(same(fpPj, pjOri), 'package.json 未還原為位元組相同')
         assert.ok(same(fpLock, lockOri), 'package-lock.json 未還原為位元組相同')
         assert.ok(logs.includes('[sbx-pub] npm i 失敗, 已還原 package.json(與 package-lock.json)為更新前內容, 重跑將重新判定為落後'), JSON.stringify(logs))
-        assert.deepStrictEqual(s.calls, ['loadScript', 'updatePackage', 'ectScripts|npm i --registry=https://registry.npmjs.org/'])
+        assert.deepStrictEqual(s.calls, ['loadScript', 'updatePackage', 'ectScripts|npm i --registry=http://localhost:48731/'])
     })
 
     it('R21.1 還原前 package.json 確已被 updatePackage 改寫(測試前提: 失敗當下 devDependencies 為 ^1.0.1)', async function() {
@@ -138,7 +141,7 @@ describe('publishPackage npm i 失敗還原(R21)', function() {
     })
 
     it('第二輪 N2 R21 提示: npm i 逾時後仍未落定(npm 可能仍在執行)而還原時, 另印一行注意訊息(lock 可能被覆寫); 一般失敗不印', async function() {
-        let s1 = setup({ npmI: async () => { throw new Error('[sbx-pub] npm指令失敗(timeout[3600000ms]): npm i --registry=https://registry.npmjs.org/\n逾時後仍未落定, 子程序樹可能未清除') } })
+        let s1 = setup({ npmI: async () => { throw new Error('[sbx-pub] npm指令失敗(timeout[3600000ms]): npm i --registry=http://localhost:48731/\n逾時後仍未落定, 子程序樹可能未清除') } })
         await assert.rejects(quiet(() => publishPackage(['sbx-pub'], { deps: s1.deps, checkRelease: false })), /仍未落定/)
         assert.ok(same(fpPj, pjOri))
         assert.ok(logs.some((x) => x.indexOf('[sbx-pub] 注意: npm 逾時後仍未落定, npm 可能仍在執行, 已還原之 package-lock.json 可能被再度覆寫') === 0), JSON.stringify(logs))
@@ -155,7 +158,7 @@ describe('publishPackage npm i 失敗還原(R21)', function() {
         assert.ok(!same(fpPj, pjOri))
         assert.ok(fs.readFileSync(fpPj, 'utf8').indexOf('"w-x": "^1.0.1"') >= 0)
         assert.ok(!logs.some((x) => x.indexOf('已還原') >= 0))
-        assert.deepStrictEqual(s.calls, ['loadScript', 'updatePackage', 'ectScripts|npm i --registry=https://registry.npmjs.org/', 'runScript'])
+        assert.deepStrictEqual(s.calls, ['loadScript', 'updatePackage', 'ectScripts|npm i --registry=http://localhost:48731/', 'runScript'])
     })
 
     it('R21.2 npm i 成功之後 runScript 於遠端列之前失敗(未呼叫 onRemote)→ 還原 package.json 與 package-lock.json(位元組相同), 印 script 階段還原訊息, 錯誤原樣 throw', async function() {
@@ -403,6 +406,71 @@ describe('publishPackage npm i 失敗還原(R21)', function() {
         setup()
         await quiet(() => publishPackage(['sbx-pub'], { deps: s.deps, checkRelease: false }))
         assert.deepStrictEqual(seen, [['loadScript', false], ['runScript', false]])
+    })
+
+    //---- 帳本 R27: 倉庫設定 ----
+
+    it('R27.2 npm i 固定指定主倉庫(--registry=<主倉庫>), 並以 registry 選項使該列 npm 子行程以主倉庫為準; 位址入口即正規化; 不再出現寫死的 npmjs', async function() {
+        let seen = []
+        let s = setup({ npmI: async (cmd, o) => { seen.push([cmd, o]) } })
+        await quiet(() => publishPackage(['sbx-pub'], { deps: s.deps, checkRelease: false, registryConfig: { main: 'HTTP://LocalHost:48732', mirrors: [] } }))
+        assert.deepStrictEqual(seen, [['npm i --registry=http://localhost:48732/', { main: 'npm', registry: 'http://localhost:48732/' }]])
+        assert.ok(!seen[0][0].includes('npmjs.org'))
+    })
+
+    it('R27.2 主倉庫換成別的位址, npm i 隨之換(包含私有倉庫與 npmjs 兩種選擇皆由設定決定)', async function() {
+        for (let main of ['http://localhost:48733/', 'https://registry.npmjs.org/']) {
+            let seen = []
+            let s = setup({ npmI: async (cmd) => { seen.push(cmd) } })
+            await quiet(() => publishPackage(['sbx-pub'], { deps: s.deps, checkRelease: false, registryConfig: { main, mirrors: [] } }))
+            assert.deepStrictEqual(seen, [`npm i --registry=${main}`])
+        }
+    })
+
+    it('R27.2 未給 registryConfig 或缺主倉庫 → 於任何副作用之前 throw [registry](不退回預設倉庫): loadScript、updatePackage、npm i、runScript 皆未呼叫, package.json 位元組不變', async function() {
+        for (let optReg of [{}, { registryConfig: undefined }, { registryConfig: {} }, { registryConfig: { mirrors: [] } }, { registryConfig: { main: '' } }, { registryConfig: { main: '  ' } }]) {
+            let s = setup()
+            await assert.rejects(quiet(() => publishPackageRaw(['sbx-pub'], { deps: s.deps, checkRelease: false, ...optReg })), /^Error: \[registry\] /, JSON.stringify(optReg))
+            assert.deepStrictEqual(s.calls, [], JSON.stringify(optReg))
+            assert.ok(same(fpPj, pjOri), JSON.stringify(optReg))
+        }
+    })
+
+    it('R27.2 主倉庫或鏡像位址無效(非 http(s)、含 shell 特殊字元)→ 於任何副作用之前 throw [registry]', async function() {
+        for (let reg of [{ main: 'ftp://x/' }, { main: "http://localhost/'; calc; '" }, { main: 'http://localhost:48731/', mirrors: ['not-a-url'] }, { main: 'http://localhost:48731/', mirrors: ['http://localhost/$(calc)'] }]) {
+            let s = setup()
+            await assert.rejects(quiet(() => publishPackageRaw(['sbx-pub'], { deps: s.deps, checkRelease: false, registryConfig: reg })), /^Error: \[registry\] /, JSON.stringify(reg))
+            assert.deepStrictEqual(s.calls, [], JSON.stringify(reg))
+        }
+    })
+
+    it('R27.4 runScript 收到正規化後之 registryConfig({ main, mirrors })與 onMirrorResult(原函式); 鏡像不影響 npm i(只用主倉庫)', async function() {
+        let seenRs = []
+        let seenNpmI = []
+        let s = setup({
+            npmI: async (cmd) => { seenNpmI.push(cmd) },
+            runScriptImpl: async (p, msg, o) => { seenRs.push(o) },
+        })
+        let onMirrorResult = () => {}
+        await quiet(() => publishPackage(['sbx-pub'], { deps: s.deps, checkRelease: false, onMirrorResult, registryConfig: { main: 'http://localhost:48731', mirrors: ['https://MIRROR-A.example.test', 'https://mirror-b.example.test/'] } }))
+        assert.deepStrictEqual(seenNpmI, ['npm i --registry=http://localhost:48731/'])
+        assert.strictEqual(seenRs.length, 1)
+        assert.deepStrictEqual(seenRs[0].registryConfig, { main: 'http://localhost:48731/', mirrors: ['https://mirror-a.example.test/', 'https://mirror-b.example.test/'] })
+        assert.strictEqual(seenRs[0].onMirrorResult, onMirrorResult)
+        assert.strictEqual(typeof seenRs[0].onRemote, 'function') //原有選項不受影響
+    })
+
+    it('R27.4 鏡像失敗不影響還原邊界: 鏡像結果由 runScript 回呼收集(publishPackage 不處理), 回傳 true 與原本相同', async function() {
+        let s = setup({
+            runScriptImpl: async (p, msg, o) => {
+                o.onRemote()
+                o.onMirrorResult({ name: 'sbx-pub', version: '0.0.2', mirror: 'https://mirror-a.example.test/', status: 'failed', error: 'x' })
+            },
+        })
+        let got = []
+        let b = await quiet(() => publishPackage(['sbx-pub'], { deps: s.deps, checkRelease: false, onMirrorResult: (r) => got.push(r), registryConfig: { main: 'http://localhost:48731/', mirrors: ['https://mirror-a.example.test/'] } }))
+        assert.strictEqual(b, true)
+        assert.strictEqual(got.length, 1)
     })
 
 })

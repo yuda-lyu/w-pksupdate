@@ -48,7 +48,7 @@ try {
             ectScripts,
             runScript: (pdi, msg, o) => runScript(pdi, msg, { ...o, exec: ectScripts, checkNpm, gitStatusDist: () => '' }),
         }
-        let b = await publishPackage([name], { checkRelease, deps })
+        let b = await publishPackage([name], { checkRelease, deps, registryConfig: { main: 'http://localhost:48731/', mirrors: [] } }) //帳本 R27: 倉庫設定由呼叫端給(虛構之本機位址)
         result = { ok: true, publish: b }
     }
     else {

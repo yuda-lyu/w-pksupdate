@@ -1,13 +1,15 @@
 //checkNpmVersion 單元測試(以 globalThis.fetch 樁, 不連網; opt.maxTry、opt.delayMs 縮短等待)
 //對應需求(帳本 CLAUDE_rulebook.md 1.3): R19 例外重試(含通過條件四項不變)
 import assert from 'assert'
-import checkNpmVersion from '../src/checkNpmVersion.mjs'
+import checkNpmVersion, { AUTH_FAIL_MAX } from '../src/checkNpmVersion.mjs'
 import { reFatal } from './tools/fatalWords.mjs'
 
 
+//帳本 R27.3: 倉庫由 opt.registry 指定(虛構之本機位址, 不連網); 不再有寫死之 npmjs
+let REG = 'http://localhost:48731/'
 let NAME = 'sbx-pkg'
 let VER = '9.9.9'
-let TARBALL = `https://registry.npmjs.org/${NAME}/-/${NAME}-${VER}.tgz`
+let TARBALL = `${REG}${NAME}/-/${NAME}-${VER}.tgz`
 
 //plan 為各次檢測(attempt)之走向, 超出後沿用最後一項:
 //  'ok'            四項檢查全過
@@ -31,6 +33,7 @@ let withFetch = async (plan, fn) => {
     let logs = []
     let attempts = 0
     let fetchCalls = 0
+    let urls = [] //每次 fetch 之網址(R27.3: 驗證請求都打指定倉庫)
     let signals = [] //每次 fetch 是否帶了 AbortSignal
     let hang = (init) => new Promise((resolve, reject) => {
         if (init.signal) {
@@ -39,6 +42,7 @@ let withFetch = async (plan, fn) => {
     })
     let stub = async (url, init = {}) => {
         fetchCalls++
+        urls.push(String(url))
         signals.push(init.signal instanceof AbortSignal)
         let isMeta = String(url).indexOf(`/${NAME}/${VER}?`) >= 0
         let isList = !isMeta && String(url).indexOf(`/${NAME}?`) >= 0
@@ -54,8 +58,8 @@ let withFetch = async (plan, fn) => {
             if (p === 'throwString') {
                 throw 'plain string failure' // eslint-disable-line no-throw-literal
             }
-            if (p === 404) {
-                return { ok: false, status: 404 }
+            if (typeof p === 'number') {
+                return { ok: false, status: p } //404(傳播中)、401/403(認證類, R27.3)等任意狀態碼
             }
             if (p === 'hangMeta') {
                 return hang(init)
@@ -78,6 +82,9 @@ let withFetch = async (plan, fn) => {
             if (p === 'hangList') {
                 return hang(init)
             }
+            if (p === 'list403') {
+                return { ok: false, status: 403 }
+            }
             return { ok: true, status: 200, json: async () => ({ versions: p === 'noVersion' ? {} : { [VER]: {} } }) }
         }
         if (isHead) {
@@ -86,6 +93,9 @@ let withFetch = async (plan, fn) => {
             }
             if (p === 'hangHead') {
                 return hang(init)
+            }
+            if (p === 'head401') {
+                return { ok: false, status: 401 }
             }
             return { ok: p !== 'headFail', status: p === 'headFail' ? 404 : 200 }
         }
@@ -96,14 +106,14 @@ let withFetch = async (plan, fn) => {
     }
     try {
         let result = await fn(stub)
-        return { result, logs, attempts, fetchCalls, signals }
+        return { result, logs, attempts, fetchCalls, urls, signals }
     }
     finally {
         console.log = oriLog
     }
 }
 
-let run = (plan, opt = { maxTry: 20, delayMs: 1 }) => withFetch(plan, (stub) => checkNpmVersion(NAME, VER, { ...opt, fetch: stub }))
+let run = (plan, opt = { maxTry: 20, delayMs: 1 }) => withFetch(plan, (stub) => checkNpmVersion(NAME, VER, { registry: REG, ...opt, fetch: stub }))
 let excLines = (logs) => logs.filter((s) => s.indexOf('檢測例外(視為尚未就緒)') === 0)
 
 
@@ -238,7 +248,7 @@ describe('checkNpmVersion 網路接縫之顯式注入(R25.2)', function() {
         }
         try {
             let r = await withFetch(['throw', 'throw', 'ok'], async (stub) => {
-                let p = checkNpmVersion(NAME, VER, { maxTry: 5, delayMs: 20, fetch: stub })
+                let p = checkNpmVersion(NAME, VER, { registry: REG, maxTry: 5, delayMs: 20, fetch: stub })
                 globalThis.fetch = fetchOri //迴圈進行中換回真 fetch(原守衛只在入口檢查一次, 之後的請求會用到真 fetch)
                 return p
             })
@@ -249,6 +259,127 @@ describe('checkNpmVersion 網路接縫之顯式注入(R25.2)', function() {
         finally {
             globalThis.fetch = fetchOri
         }
+    })
+
+})
+
+
+//帳本 R27.3: 上架確認打 opt.registry 指定之主倉庫(原寫死 https://registry.npmjs.org/ , 改走私有倉庫後發到私有倉庫之版本永遠查不到而一直等)
+describe('checkNpmVersion 倉庫位址(R27.3)', function() {
+
+    it('R27.3 四項檢查之請求全部打指定倉庫: <倉庫><name>/<version>?t=、<倉庫><name>?t=、tarball(取自 metadata)HEAD; 沒有任何請求打 npmjs', async function() {
+        let r = await run(['ok'])
+        assert.strictEqual(r.result, true)
+        assert.strictEqual(r.urls.length, 3)
+        assert.ok(r.urls[0].startsWith(`${REG}${NAME}/${VER}?t=`), r.urls[0])
+        assert.ok(r.urls[1].startsWith(`${REG}${NAME}?t=`), r.urls[1])
+        assert.strictEqual(r.urls[2], TARBALL)
+        assert.ok(!r.urls.some((u) => u.indexOf('npmjs.org') >= 0), JSON.stringify(r.urls))
+    })
+
+    it('R27.2 位址正規化: 結尾無斜線、主機大寫、帶預設埠者皆正規化後再組網址(不出現雙斜線或缺斜線)', async function() {
+        for (let reg of ['http://localhost:48731', 'HTTP://LOCALHOST:48731/', '  http://localhost:48731/  ']) {
+            let r = await run(['ok'], { registry: reg, maxTry: 0, delayMs: 1 })
+            assert.ok(r.urls[0].startsWith(`${REG}${NAME}/${VER}?t=`), `${reg} → ${r.urls[0]}`)
+            assert.ok(r.urls[1].startsWith(`${REG}${NAME}?t=`), `${reg} → ${r.urls[1]}`)
+        }
+        let r2 = await run(['ok'], { registry: 'https://registry.example.test:443/sub/', maxTry: 0, delayMs: 1 })
+        assert.ok(r2.urls[0].startsWith(`https://registry.example.test/sub/${NAME}/${VER}?t=`), r2.urls[0]) //倉庫位址可含路徑前綴; https 預設埠被標準化掉
+    })
+
+    it('R27.3 未給 opt.registry → throw [registry] 且完全不發請求(不退回預設倉庫)', async function() {
+        let r = null
+        await assert.rejects(withFetch(['ok'], async (stub) => {
+            r = stub
+            return checkNpmVersion(NAME, VER, { maxTry: 0, delayMs: 1, fetch: stub })
+        }), /^Error: \[registry\] checkNpmVersion 需 opt\.registry/)
+        assert.ok(r)
+        for (let bad of ['', '   ', null, undefined, 0]) {
+            let res = await withFetch(['ok'], async (stub) => {
+                try {
+                    await checkNpmVersion(NAME, VER, { registry: bad, maxTry: 0, delayMs: 1, fetch: stub })
+                    return 'no-throw'
+                }
+                catch (err) {
+                    return err.message
+                }
+            })
+            assert.ok(/^\[registry\] checkNpmVersion 需 opt\.registry/.test(res.result), JSON.stringify(bad))
+            assert.strictEqual(res.fetchCalls, 0, JSON.stringify(bad))
+        }
+    })
+
+    it('R27.2 非 http(s) 或含帳密/查詢字串/空白/特殊字元之位址 → throw [registry] 且不發請求', async function() {
+        for (let bad of ['ftp://localhost/', 'file:///c:/x/', 'localhost:48731', 'registry.example.test', 'http://user:pw@localhost:48731/', 'http://localhost:48731/?a=1', 'http://localhost:48731/#x', 'http://local host/', "http://localhost/'x", 'http://localhost/$(x)', 'http://localhost/;x', 'http://[::1]:48731/']) {
+            let res = await withFetch(['ok'], async (stub) => {
+                try {
+                    await checkNpmVersion(NAME, VER, { registry: bad, maxTry: 0, delayMs: 1, fetch: stub })
+                    return 'no-throw'
+                }
+                catch (err) {
+                    return err.message
+                }
+            })
+            assert.ok(/^\[registry\] /.test(res.result), `${bad} → ${res.result}`)
+            assert.strictEqual(res.fetchCalls, 0, bad)
+        }
+    })
+
+    //評審 F05: 本檢測的請求不帶 npm 認證; 認證類錯誤不是傳播延遲, 空等 2~3 小時無意義
+    it('評審 F05 主倉庫在 metadata 步驟連續回 401/403 → 連續 AUTH_FAIL_MAX 次即停止等待並回 false(不跑滿 maxTry), 印一次診斷與一次停止行', async function() {
+        for (let code of [401, 403]) {
+            let r = await run([code], { maxTry: 500, delayMs: 1 })
+            assert.strictEqual(r.result, false, String(code))
+            assert.strictEqual(r.attempts, AUTH_FAIL_MAX, String(code))
+            assert.strictEqual(r.logs.filter((s) => s.indexOf(`主倉庫回 ${code}(本檢測的請求不帶 npm 認證`) >= 0).length, 1)
+            assert.strictEqual(r.logs.filter((s) => s.indexOf('判定為認證問題而非傳播延遲, 停止等待') >= 0).length, 1)
+            for (let s of r.logs) {
+                assert.ok(!reFatal.test(s), s)
+            }
+        }
+        assert.strictEqual(AUTH_FAIL_MAX, 20)
+    })
+
+    it('評審 F05 versions list / tarball HEAD 步驟的 401/403 同樣計入連續認證失敗', async function() {
+        let r1 = await run(['list403'], { maxTry: 500, delayMs: 1 })
+        assert.strictEqual(r1.result, false)
+        assert.strictEqual(r1.attempts, AUTH_FAIL_MAX)
+        let r2 = await run(['head401'], { maxTry: 500, delayMs: 1 })
+        assert.strictEqual(r2.result, false)
+        assert.strictEqual(r2.attempts, AUTH_FAIL_MAX)
+    })
+
+    it('評審 F05 未達門檻或中間夾雜非認證結果則不停止: 19 次 403 後成功 → true; 403 與 404 交錯(連續計數歸零)跑滿 maxTry', async function() {
+        let plan = Array.from({ length: AUTH_FAIL_MAX - 1 }, () => 403).concat(['ok'])
+        let r = await run(plan, { maxTry: 500, delayMs: 1 })
+        assert.strictEqual(r.result, true)
+        assert.strictEqual(r.attempts, AUTH_FAIL_MAX)
+        let alt = []
+        for (let i = 0; i < 100; i++) {
+            alt.push(i % 2 === 0 ? 403 : 404)
+        }
+        let r2 = await run(alt, { maxTry: 59, delayMs: 1 })
+        assert.strictEqual(r2.result, false)
+        assert.strictEqual(r2.attempts, 60) //maxTry + 1: 未被認證類停止
+    })
+
+    it('評審 F05 一般傳播中(404)不受影響: 仍重試至 maxTry', async function() {
+        let r = await run([404], { maxTry: 30, delayMs: 1 })
+        assert.strictEqual(r.result, false)
+        assert.strictEqual(r.attempts, 31)
+    })
+
+    it('R27.2 被拒絕之位址若含帳密, 錯誤訊息遮蔽之(不洩漏)', async function() {
+        let res = await withFetch(['ok'], async (stub) => {
+            try {
+                await checkNpmVersion(NAME, VER, { registry: 'ftp://user:secretpw@localhost/', maxTry: 0, delayMs: 1, fetch: stub })
+                return 'no-throw'
+            }
+            catch (err) {
+                return err.message
+            }
+        })
+        assert.ok(res.result.indexOf('secretpw') < 0, res.result)
     })
 
 })

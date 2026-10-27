@@ -147,7 +147,7 @@ describe('runScript 與 publishPackage 整合(子程序)', function() {
         assert.strictEqual(r.publish, true)
         assert.deepStrictEqual(r.calls, [
             'updatePackage',
-            'ectScripts|npm i --registry=https://registry.npmjs.org/|npm',
+            'ectScripts|npm i --registry=http://localhost:48731/|npm',
             'ectScripts|node toolg/addVersion.mjs|node',
             'ectScripts|node toolg/mark.mjs A|node',
             'ectScripts|./node_modules/.bin/fakebin 0|',

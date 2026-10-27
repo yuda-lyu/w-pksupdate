@@ -42,6 +42,22 @@ describe('ectScripts composeCommand(R01 組法)', function() {
         assert.strictEqual(g, 1)
     })
 
+    //帳本 R27.2: 主倉庫以 $env:npm_config_registry 套用於整行(npm 設定優先序: 命令列旗標 > 環境變數 > 專案 .npmrc > 使用者 .npmrc)
+    it('R27.2 給 registry → Set-Location 之後、指令之前設 $env:npm_config_registry(單引號, 已正規化); 不給時組法與原本逐字相同', function() {
+        let base = composeCommand('C:\\p', 'npm publish')
+        assert.strictEqual(composeCommand('C:\\p', 'npm publish', {}), base)
+        assert.strictEqual(composeCommand('C:\\p', 'npm publish', { registry: '' }), base)
+        assert.strictEqual(composeCommand('C:\\p', 'npm publish', { registry: undefined }), base)
+        let s = composeCommand('C:\\p', 'npm publish', { registry: 'http://localhost:48731' })
+        assert.strictEqual(s, `$ErrorActionPreference = 'Stop' ; Set-Location -LiteralPath 'C:\\p' ; $env:npm_config_registry = 'http://localhost:48731/' ; npm publish ; ${GUARD}`)
+    })
+
+    it('R27.2 registry 非 http(s) 或含 shell 特殊字元 → throw(位址會組進交給 PowerShell 之整行指令)', function() {
+        for (let bad of ['ftp://x/', "http://localhost/'; calc; '", 'http://localhost/$(calc)', 'http://user:pw@localhost/', 'not-a-url']) {
+            assert.throws(() => composeCommand('C:\\p', 'npm publish', { registry: bad }), /^Error: \[registry\] /, bad)
+        }
+    })
+
 })
 
 
@@ -754,6 +770,34 @@ describe('ectScripts detectPrintedFailure(R15 離開碼 0 時之輸出特徵; �
         assert.deepStrictEqual(detectPrintedFailure(`Error: boom\n${frames}`, ''), fail) //Error 標頭
         assert.deepStrictEqual(detectPrintedFailure(`(node:1\n${frames}`, ''), fail) //不完整之 (node:pid) 標頭
         assert.deepStrictEqual(detectPrintedFailure(`Tracer\n${frames}`, ''), fail) //Trace 前綴字串不算
+    })
+
+    //2026-10-28 建議w-pksupdate修正.md(w-package-tools 主責 agent 2026-10-17 提出): Error 帶自有可列舉屬性(code、errno、syscall…)時 util.inspect(console.log(err))把屬性區塊接在最後一個堆疊框行尾(' {')
+    it('R15.1 單框堆疊 + 屬性區塊(最後一框行尾為 " {")仍判含錯誤堆疊(Error 帶 code 等可列舉屬性之 util.inspect 形狀)', function() {
+        let fail = { detail: 'exit 0 但輸出含錯誤堆疊' }
+        for (let s of [
+            "Error: x\n    at fn (file:///a/b.mjs:1:2) {\n  code: 'X'\n}",
+            "Error: module[only-named.mjs] has no default export\n    at rollupWorkerCore (file:///C:/pkg/src/rollupWorkerCore.mjs:1115:16) {\n  code: 'WPT_NO_DEFAULT_EXPORT'\n}\n",
+            "Error: ENOENT: no such file or directory, open 'x'\n    at async open (node:internal/fs/promises:639:25) {\n  errno: -4058,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'x'\n}",
+            "Error: y\n    at async file:///C:/x.mjs:3:9 {\n  id: 'z'\n}",
+            "Error: y\n    at fn (file:///a/b.mjs:1:2) {  \n  id: 'z'\n}", //{ 後有尾端空白
+        ]) {
+            assert.deepStrictEqual(detectPrintedFailure(s, ''), fail, JSON.stringify(s))
+            assert.deepStrictEqual(detectPrintedFailure('', s), fail, JSON.stringify(s))
+        }
+    })
+
+    it('R15.1 容許 " {" 不放寬其他: { 之後有其他文字、{ 在非位置結尾、時間戳行加 { 仍不判; Trace/(node:pid) 標頭之後的單框加 { 仍豁免', function() {
+        for (let s of [
+            '    at fn (file:///a/b.mjs:1:2) { extra',
+            '    at the end of the build 12:30:45 {',
+            '    at fn (file:///a/b.mjs:1:2) {{',
+            'Error: x {\n  code: 1\n}',
+        ]) {
+            assert.strictEqual(detectPrintedFailure(s + '\n', ''), null, JSON.stringify(s))
+        }
+        assert.strictEqual(detectPrintedFailure("Trace: x\n    at foo (file:///C:/x.mjs:1:2) {\n  code: 'X'\n}\n", ''), null)
+        assert.strictEqual(detectPrintedFailure("(node:1234) Warning: w\n    at foo (file:///C:/x.mjs:1:2) {\n  code: 'X'\n}\n", ''), null)
     })
 
     it('R15.5(第二輪 N1 回歸修正) (node:pid) 標頭只豁免良性警告; UnhandledPromiseRejectionWarning 後之堆疊框是未處理的建置失敗(--unhandled-rejections=warn 時 exit 0), 仍判失敗', function() {

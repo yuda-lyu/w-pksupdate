@@ -5,12 +5,16 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import publishPackage from '../src/publishPackage.mjs'
+import publishPackageRaw from '../src/publishPackage.mjs'
 import runScript from '../src/runScript.mjs'
 import ectScripts from '../src/ectScripts.mjs'
 import updatePackage from '../src/updatePackage.mjs'
 import { writeScript, cleanTmpRoot } from './tools/mkFixturePkg.mjs'
 import { reFatal } from './tools/fatalWords.mjs'
+
+//帳本 R27: publishPackage 須由呼叫端給 registryConfig(不退回預設倉庫); 本檔以虛構之本機位址為預設
+let REG = { main: 'http://localhost:48731/', mirrors: [] }
+let publishPackage = (names, opt = {}) => publishPackageRaw(names, { registryConfig: REG, ...opt })
 
 
 let fdTmp = path.resolve('./test/_tmp/unit-publishPackage-restore')
