@@ -6,12 +6,13 @@ import _ from 'lodash-es'
  *
  * 規則(業主2026-10-01裁示, 見CLAUDE.md §4):
  * 1.w-package-tools為全自有套件(發布至npm才算套件)之基礎, 自身level為最小=1
- * 2.w-package-tools-*代表第二層基礎, 依賴w-package-tools, level一律為2
+ * 2.w-package-tools-*代表第二層基礎, 依賴w-package-tools, level最小為2; 另依賴其他自有套件者(如w-package-tools-e2e依賴wsemi)取最大依賴level+1
+ *   (業主2026-10-31:「w-package-tools-e2e 解除限定level=2的要求 因已依賴wsemi」; 原為「level一律為2」)
  * 3.其他npm套件level最小只能用3, 以wsemi為例, 雖僅依賴w-package-tools(1), 其level最小仍須為3,
  *   不能使用到2, 因2是第二層基礎專用之level
  * 4.其他npm套件, 有安裝自有套件者取其最大之level, 自身之level為前者+1
  *
- * 規則3與4合併為: max(levelDepMax + 1, 3)
+ * 規則2合併為: max(levelDepMax + 1, 2); 規則3與4合併為: max(levelDepMax + 1, 3)
  *
  * 此函數為checkProjectLevels(閘門)與g_checkProjectLevels(依賴圖重算)之共用判準,
  * 兩者務必皆由此取得應有Level, 不可各自手寫(殷鑑: 重算曾寫死3而閘門放行2, 同一規則兩處行為分岔)
@@ -27,9 +28,9 @@ function getLevelWant(name, levelDepMax) {
         return 1
     }
 
-    //w-package-tools-*: 第二層基礎
+    //w-package-tools-*: 第二層基礎, 下限為2, 另依賴其他自有套件者取最大依賴level+1
     if (_.startsWith(name, 'w-package-tools-')) {
-        return 2
+        return Math.max(levelDepMax + 1, 2)
     }
 
     //其他npm套件: 取最大依賴level+1, 下限為3
